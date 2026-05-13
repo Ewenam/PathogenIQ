@@ -153,6 +153,79 @@ def summary(report_json):
     console.print(table)
 
 
+@cli.command()
+@click.option("--alert-threshold", default=0.6, show_default=True,
+              help="Risk score threshold for alerting (0–1).")
+@click.option("--quick", is_flag=True, default=False,
+              help="Skip graph/SBM — fast validation of risk scoring only.")
+@click.option("--seed", default=42, show_default=True, help="Random seed for synthetic data.")
+@click.option("--output", "-o", default=None,
+              help="Save benchmark results to this JSON file.")
+def benchmark(alert_threshold, quick, seed, output):
+    """
+    Run the full benchmark suite against synthetic ground-truth datasets.
+
+    Generates 6 controlled scenarios (negative controls, low/high contamination,
+    critical pathogens, multi-pathogen communities, novel agents) and computes
+    sensitivity, specificity, precision, and F1 for the detection pipeline.
+
+    Example:\n
+      pathogeniq benchmark\n
+      pathogeniq benchmark --quick --output results.json
+    """
+    from pathogeniq.benchmark.runner import run_benchmark
+
+    results = run_benchmark(
+        alert_threshold=alert_threshold,
+        quick=quick,
+        seed=seed,
+    )
+
+    if output:
+        import json
+        from pathlib import Path
+        Path(output).write_text(json.dumps(results, indent=2))
+        click.echo(f"\nResults saved → {output}")
+
+
+@cli.command()
+@click.argument("data_dir", type=click.Path(exists=True))
+@click.option("--output", "-o", default="./reports", show_default=True,
+              help="Directory for pipeline output reports.")
+@click.option("--interval", default=3600, show_default=True,
+              help="Poll interval in seconds.")
+@click.option("--alert-email", is_flag=True, default=False,
+              help="Send email alerts (requires PATHOGENIQ_SMTP_* env vars).")
+@click.option("--alert-slack", is_flag=True, default=False,
+              help="Send Slack alerts (requires PATHOGENIQ_SLACK_WEBHOOK env var).")
+@click.option("--run-on-start", is_flag=True, default=False,
+              help="Process existing unprocessed data immediately on launch.")
+@click.option("--quiet", is_flag=True, default=False,
+              help="Suppress pipeline progress output.")
+def watch(data_dir, output, interval, alert_email, alert_slack, run_on_start, quiet):
+    """
+    Watch a directory and run the pipeline automatically on new data.
+
+    Monitors DATA_DIR for new Kraken2 report subdirectories or count matrix
+    files (*.tsv, *.csv). Runs the full PathogenIQ pipeline on each new input,
+    saves reports to OUTPUT, and sends alerts if configured.
+
+    Example:\n
+      pathogeniq watch ./data\n
+      pathogeniq watch ./data --interval 1800 --alert-slack --run-on-start
+    """
+    from pathogeniq.scheduler.watcher import watch as _watch
+    _watch(
+        data_dir=data_dir,
+        output_dir=output,
+        interval=interval,
+        alert_email=alert_email,
+        alert_slack=alert_slack,
+        run_on_start=run_on_start,
+        quiet=quiet,
+    )
+
+
 @cli.command("train-embedder")
 @click.argument("fasta_path", type=click.Path(exists=True))
 @click.option("--output", "-o", default=None,

@@ -207,12 +207,38 @@ def score_sample(
     novelty = float(np.clip(novelty_score, 0.0, 1.0))
 
     # Composite score
-    score = (
+    composite = (
         w["abundance"] * abundance_score +
         w["community"] * community_signal +
         w["novelty"] * novelty
     )
-    score = float(np.clip(score, 0.0, 1.0))
+
+    # ── Direct detection pathway (WBE-calibrated) ─────────────────────────────
+    # Epidemiological rule: a known high-risk pathogen at outbreak-level abundance
+    # is actionable regardless of community structure or novelty score.
+    # Thresholds derived from WHO/CDC wastewater-based epidemiology guidelines.
+    direct = 0.0
+    if detected:
+        top = detected[0]
+        rw, ab = top["risk_weight"], top["abundance"]
+        # Single dominant pathogen thresholds
+        if rw >= 0.85 and ab >= 0.05:    # BSL-3 agent (Yersinia, Ebola…) at ≥5%
+            direct = 0.85
+        elif rw >= 0.70 and ab >= 0.15:  # High-risk pathogen at ≥15%
+            direct = 0.65
+        elif rw >= 0.70 and ab >= 0.05:  # High-risk pathogen at ≥5%
+            direct = 0.40
+        elif rw >= 0.50 and ab >= 0.20:  # Moderate-risk pathogen at ≥20%
+            direct = 0.35
+        # Multi-pathogen additive load: sum of (risk_weight × abundance) > threshold
+        if len(detected) >= 2:
+            load = sum(p["risk_weight"] * p["abundance"] for p in detected[:4])
+            if load >= 0.10:
+                direct = max(direct, 0.62)   # concurrent pathogen community → HIGH
+            elif load >= 0.04:
+                direct = max(direct, 0.38)   # notable multi-pathogen → MODERATE
+
+    score = float(np.clip(max(composite, direct), 0.0, 1.0))
 
     return RiskScore(
         sample_name=sample_name,
@@ -225,6 +251,8 @@ def score_sample(
             "abundance_score": abundance_score,
             "community_signal": community_signal,
             "novelty_signal": novelty,
+            "composite_score": round(composite, 4),
+            "direct_detection_score": round(direct, 4),
             "weights": w,
         },
     )

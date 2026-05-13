@@ -1,0 +1,70 @@
+# PathogenIQ — docker-compose
+#
+# Services:
+#   dashboard  — real-time web UI at http://localhost:8765
+#   watcher    — polls ./data for new reports, runs pipeline automatically
+#
+# Quick start:
+#   cp .env.example .env          # fill in SMTP/Slack credentials
+#   docker compose up dashboard   # start dashboard only
+#   docker compose up             # start both (dashboard + watcher)
+#
+# Environment variables (set in .env or shell):
+#   PATHOGENIQ_SLACK_WEBHOOK  — Slack incoming webhook URL
+#   PATHOGENIQ_SMTP_USER      — SMTP sender email
+#   PATHOGENIQ_SMTP_PASS      — SMTP app password
+#   PATHOGENIQ_ALERT_EMAILS   — comma-separated recipient list
+#   WATCH_INTERVAL            — watcher poll interval in seconds (default: 3600)
+
+services:
+
+  dashboard:
+    build: .
+    image: pathogeniq:latest
+    container_name: pathogeniq-dashboard
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      - reports:/app/reports
+      - pathogeniq_db:/home/pathogeniq/.pathogeniq
+    environment:
+      PATHOGENIQ_REPORT: /app/reports/report.json
+    command: ["pathogeniq", "dashboard", "--host", "0.0.0.0", "--port", "8765"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/api/summary"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  watcher:
+    build: .
+    image: pathogeniq:latest
+    container_name: pathogeniq-watcher
+    restart: unless-stopped
+    volumes:
+      - ./data:/data:ro            # mount your Kraken2 reports / count matrices here
+      - reports:/app/reports
+      - pathogeniq_db:/home/pathogeniq/.pathogeniq
+    environment:
+      PATHOGENIQ_REPORT: /app/reports/report.json
+      PATHOGENIQ_SLACK_WEBHOOK: ${PATHOGENIQ_SLACK_WEBHOOK:-}
+      PATHOGENIQ_SMTP_USER: ${PATHOGENIQ_SMTP_USER:-}
+      PATHOGENIQ_SMTP_PASS: ${PATHOGENIQ_SMTP_PASS:-}
+      PATHOGENIQ_ALERT_EMAILS: ${PATHOGENIQ_ALERT_EMAILS:-}
+    command: >
+      pathogeniq watch /data
+      --output /app/reports
+      --interval ${WATCH_INTERVAL:-3600}
+      --alert-email
+      --alert-slack
+      --run-on-start
+    depends_on:
+      - dashboard
+
+volumes:
+  reports:
+    driver: local
+  pathogeniq_db:
+    driver: local

@@ -15,3 +15,5 @@ reports/
 *.fq
 *.fq.gz
 .env
+*.db
+.pathogeniq_processed.json
