@@ -1,15 +1,189 @@
 {
   "_comment": "GPS coordinates for PathogenIQ map view. Keys must match sample names exactly as they appear in the pipeline report (after paired-end merging).",
   "_sources": "NCBI SRA BioSample metadata: Wisconsin State Laboratory of Hygiene (BioProject SRR3593973x) and Colorado SARS-CoV-2 wastewater surveillance (BioProject SRR3555600x)",
-
-  "cleaned_SRR35939735": {"lat": 43.073, "lon": -89.401, "label": "Wisconsin SLOH (Oct 19)"},
-  "cleaned_SRR35939736": {"lat": 43.073, "lon": -89.401, "label": "Wisconsin SLOH (Oct 13)"},
-  "cleaned_SRR35939737": {"lat": 43.073, "lon": -89.401, "label": "Wisconsin SLOH (Oct 20)"},
-  "cleaned_SRR35939738": {"lat": 43.073, "lon": -89.401, "label": "Wisconsin SLOH (Oct 7)"},
-  "cleaned_SRR35939739": {"lat": 43.073, "lon": -89.401, "label": "Wisconsin SLOH (Oct 2)"},
-  "cleaned_SRR35939740": {"lat": 43.073, "lon": -89.401, "label": "Wisconsin SLOH (Oct 6)"},
-  "cleaned_SRR35556007": {"lat": 40.093, "lon": -105.371, "label": "Boulder County WWTP (CO)"},
-  "cleaned_SRR35556008": {"lat": 39.648, "lon": -104.834, "label": "Arapahoe County WWTP (CO)"},
-  "cleaned_SRR35556009": {"lat": 39.871, "lon": -104.731, "label": "Adams County WWTP (CO)"},
-  "clean_wastewater":    {"lat": 43.073, "lon": -89.401, "label": "Synthetic control"}
+  "cleaned_SRR35556007": {
+    "lat": 40.093,
+    "lon": -105.371,
+    "label": "Colorado, Boulder County, (2025-09-15)",
+    "accession": "SRR35556007",
+    "collection_date": "2025-09-15",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35556008": {
+    "lat": 39.648,
+    "lon": -104.834,
+    "label": "Colorado, Arapahoe County, (2025-09-15)",
+    "accession": "SRR35556008",
+    "collection_date": "2025-09-15",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35556009": {
+    "lat": 39.871,
+    "lon": -104.731,
+    "label": "Colorado, Adams County, (2025-09-15)",
+    "accession": "SRR35556009",
+    "collection_date": "2025-09-15",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939735": {
+    "lat": 43.073,
+    "lon": -89.401,
+    "label": "Wisconsin, (2025-10-19)",
+    "accession": "SRR35939735",
+    "collection_date": "2025-10-19",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939736": {
+    "lat": 43.073,
+    "lon": -89.401,
+    "label": "Wisconsin, (2025-10-13)",
+    "accession": "SRR35939736",
+    "collection_date": "2025-10-13",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939737": {
+    "lat": 43.073,
+    "lon": -89.401,
+    "label": "Wisconsin, (2025-10-20)",
+    "accession": "SRR35939737",
+    "collection_date": "2025-10-20",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939738": {
+    "lat": 43.073,
+    "lon": -89.401,
+    "label": "Wisconsin, (2025-10-07)",
+    "accession": "SRR35939738",
+    "collection_date": "2025-10-07",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939739": {
+    "lat": 43.073,
+    "lon": -89.401,
+    "label": "Wisconsin, (2025-10-02)",
+    "accession": "SRR35939739",
+    "collection_date": "2025-10-02",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939740": {
+    "lat": 43.073,
+    "lon": -89.401,
+    "label": "Wisconsin, (2025-10-06)",
+    "accession": "SRR35939740",
+    "collection_date": "2025-10-06",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35556007_1.kraken": {
+    "label": "Colorado, Boulder County, (2025-09-15)",
+    "accession": "SRR35556007",
+    "collection_date": "2025-09-15",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35556007_2.kraken": {
+    "label": "Colorado, Boulder County, (2025-09-15)",
+    "accession": "SRR35556007",
+    "collection_date": "2025-09-15",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35556008_1.kraken": {
+    "label": "Colorado, Arapahoe County, (2025-09-15)",
+    "accession": "SRR35556008",
+    "collection_date": "2025-09-15",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35556008_2.kraken": {
+    "label": "Colorado, Arapahoe County, (2025-09-15)",
+    "accession": "SRR35556008",
+    "collection_date": "2025-09-15",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35556009_1.kraken": {
+    "label": "Colorado, Adams County, (2025-09-15)",
+    "accession": "SRR35556009",
+    "collection_date": "2025-09-15",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35556009_2.kraken": {
+    "label": "Colorado, Adams County, (2025-09-15)",
+    "accession": "SRR35556009",
+    "collection_date": "2025-09-15",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939735_1.kraken": {
+    "label": "Wisconsin, (2025-10-19)",
+    "accession": "SRR35939735",
+    "collection_date": "2025-10-19",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939735_2.kraken": {
+    "label": "Wisconsin, (2025-10-19)",
+    "accession": "SRR35939735",
+    "collection_date": "2025-10-19",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939736_1.kraken": {
+    "label": "Wisconsin, (2025-10-13)",
+    "accession": "SRR35939736",
+    "collection_date": "2025-10-13",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939736_2.kraken": {
+    "label": "Wisconsin, (2025-10-13)",
+    "accession": "SRR35939736",
+    "collection_date": "2025-10-13",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939737_1.kraken": {
+    "label": "Wisconsin, (2025-10-20)",
+    "accession": "SRR35939737",
+    "collection_date": "2025-10-20",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939737_2.kraken": {
+    "label": "Wisconsin, (2025-10-20)",
+    "accession": "SRR35939737",
+    "collection_date": "2025-10-20",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939738_1.kraken": {
+    "label": "Wisconsin, (2025-10-07)",
+    "accession": "SRR35939738",
+    "collection_date": "2025-10-07",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939738_2.kraken": {
+    "label": "Wisconsin, (2025-10-07)",
+    "accession": "SRR35939738",
+    "collection_date": "2025-10-07",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939739_1.kraken": {
+    "label": "Wisconsin, (2025-10-02)",
+    "accession": "SRR35939739",
+    "collection_date": "2025-10-02",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939739_2.kraken": {
+    "label": "Wisconsin, (2025-10-02)",
+    "accession": "SRR35939739",
+    "collection_date": "2025-10-02",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939740_1.kraken": {
+    "label": "Wisconsin, (2025-10-06)",
+    "accession": "SRR35939740",
+    "collection_date": "2025-10-06",
+    "isolation_source": "wastewater"
+  },
+  "cleaned_SRR35939740_2.kraken": {
+    "label": "Wisconsin, (2025-10-06)",
+    "accession": "SRR35939740",
+    "collection_date": "2025-10-06",
+    "isolation_source": "wastewater"
+  },
+  "clean_wastewater": {
+    "lat": 43.073,
+    "lon": -89.401,
+    "label": "Synthetic control"
+  }
 }
