@@ -30,6 +30,9 @@ services:
       - pathogeniq_db:/home/pathogeniq/.pathogeniq
     environment:
       PATHOGENIQ_REPORT: /app/reports/report.json
+      PATHOGENIQ_DASH_USER: ${PATHOGENIQ_DASH_USER:-admin}
+      PATHOGENIQ_DASH_PASS: ${PATHOGENIQ_DASH_PASS:-pathogeniq}
+      PATHOGENIQ_DASH_AUTH: ${PATHOGENIQ_DASH_AUTH:-true}
     command: ["pathogeniq", "dashboard", "--host", "0.0.0.0", "--port", "8765"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8765/api/summary"]

@@ -12,22 +12,55 @@ Run:
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
+import secrets
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 from ..temporal.store import TimeSeriesStore, DEFAULT_DB
 
+# ── Auth config (env vars must be set before this module is imported) ──────────
+_AUTH_ENABLED = os.environ.get("PATHOGENIQ_DASH_AUTH", "true").lower() not in ("false", "0", "no")
+_DASH_USER = os.environ.get("PATHOGENIQ_DASH_USER", "admin")
+_DASH_PASS = os.environ.get("PATHOGENIQ_DASH_PASS", "pathogeniq")
+
+
+class _BasicAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if not _AUTH_ENABLED:
+            return await call_next(request)
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Basic "):
+            try:
+                decoded = base64.b64decode(auth[6:]).decode("utf-8")
+                user, _, pwd = decoded.partition(":")
+                if (secrets.compare_digest(user, _DASH_USER) and
+                        secrets.compare_digest(pwd, _DASH_PASS)):
+                    return await call_next(request)
+            except Exception:
+                pass
+        return Response(
+            "Authentication required",
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="PathogenIQ Dashboard"'},
+        )
+
+
 app = FastAPI(title="PathogenIQ Dashboard", docs_url=None, redoc_url=None)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(_BasicAuthMiddleware)  # outermost: runs first, before CORS
 
 _DB_PATH = Path(os.environ.get("PATHOGENIQ_DB", str(DEFAULT_DB)))
 _REPORT_PATH = Path(os.environ.get("PATHOGENIQ_REPORT", "./reports/report.json"))
 _HTML_PATH = Path(__file__).parent / "index.html"
+_LOCATIONS_PATH = Path(__file__).parent / "site_locations.json"
 
 
 def _store() -> TimeSeriesStore:
@@ -84,6 +117,18 @@ async def alerts():
     return {"alerts": cusum_alerts}
 
 
+@app.get("/api/locations")
+async def locations():
+    """Return site GPS coordinates from site_locations.json (keys starting with _ are stripped)."""
+    if _LOCATIONS_PATH.exists():
+        try:
+            data = json.loads(_LOCATIONS_PATH.read_text())
+            return JSONResponse({k: v for k, v in data.items() if not k.startswith("_")})
+        except Exception:
+            pass
+    return JSONResponse({})
+
+
 @app.get("/api/site/{site_name}/history")
 async def site_history(site_name: str, weeks: int = 16):
     store = _store()
@@ -102,6 +147,9 @@ async def site_pathogens(site_name: str):
                 "site": site_name,
                 "pathogens": s.get("detected_pathogens", []),
                 "temporal": s.get("temporal", {}),
+                "score": s.get("score"),
+                "level": s.get("level"),
+                "breakdown": s.get("breakdown", {}),
             }
     raise HTTPException(404, f"Site '{site_name}' not found in latest report")
 

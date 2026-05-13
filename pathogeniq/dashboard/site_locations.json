@@ -1,0 +1,8 @@
+{
+  "_comment": "Map site names (from your Kraken2 report) to GPS coordinates for the map view.",
+  "_format":  "Keys must match the site name exactly as it appears in the pipeline report.",
+  "_example": {
+    "SRR29756825": { "lat": 33.748, "lon": -84.387, "label": "Atlanta WWTP" },
+    "SRR29756826": { "lat": 40.712, "lon": -74.006, "label": "NYC East River" }
+  }
+}
