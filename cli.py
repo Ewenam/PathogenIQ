@@ -30,9 +30,12 @@ def cli():
               help="Send email alerts on HIGH/CRITICAL findings (requires PATHOGENIQ_SMTP_* env vars).")
 @click.option("--alert-slack", is_flag=True, default=False,
               help="Send Slack alerts on HIGH/CRITICAL findings (requires PATHOGENIQ_SLACK_WEBHOOK).")
+@click.option("--run-date", default=None,
+              help="ISO date (YYYY-MM-DD) to stamp this run in the history store. "
+                   "Defaults to today. Use this when replaying historical samples.")
 @click.option("--quiet", is_flag=True, default=False, help="Suppress progress output.")
 def run(input_path, config, rank, output, alert_threshold, characterize,
-        use_vqvae, alert_email, alert_slack, quiet):
+        use_vqvae, alert_email, alert_slack, run_date, quiet):
     """
     Run the full PathogenIQ pipeline on Kraken2 reports or a count matrix.
 
@@ -55,6 +58,8 @@ def run(input_path, config, rank, output, alert_threshold, characterize,
     cfg.use_vqvae = use_vqvae
     cfg.alert_email = alert_email
     cfg.alert_slack = alert_slack
+    if run_date:
+        cfg.run_date = run_date
 
     results = _run(
         input_path=input_path,
