@@ -266,16 +266,67 @@ export PATHOGENIQ_DASH_AUTH="false"   # disable auth entirely
 
 ### Setting up the map view
 
-Edit `pathogeniq/dashboard/site_locations.json` to map your sample names to GPS coordinates:
+The easiest way is to run `fetch_metadata.py` (see below) — it fills in `site_locations.json` automatically for any SRA dataset. If your samples are not from SRA, edit the file manually:
 
 ```json
 {
-  "cleaned_SRR35556007_1": { "lat": 33.748, "lon": -84.387, "label": "Atlanta WWTP North" },
-  "cleaned_SRR35556008_1": { "lat": 33.755, "lon": -84.412, "label": "Atlanta WWTP South" }
+  "my_site_A": { "lat": 33.748, "lon": -84.387, "label": "Atlanta WWTP North" },
+  "my_site_B": { "lat": 33.755, "lon": -84.412, "label": "Atlanta WWTP South" }
 }
 ```
 
-Keys must match the site names exactly as they appear in your Kraken2 report filenames. Sites without coordinates are still shown in the table — just not on the map.
+Keys must match the sample names exactly as they appear in the pipeline report (after paired-end merging). Sites without coordinates are still shown in the table — just not on the map.
+
+---
+
+## Fetching Sample Metadata from NCBI (`fetch_metadata.py`)
+
+If your Kraken2 reports came from public SRA data (filenames contain `SRR`, `ERR`, or `DRR` accession IDs), `fetch_metadata.py` automates everything:
+
+- Extracts accession IDs from your report filenames
+- Fetches title, study name, geographic location, isolation source, and collection date from NCBI BioSample
+- Geocodes location strings to lat/lon (tries OpenStreetMap Nominatim; falls back to a built-in US state/county table for restricted networks)
+- Writes `site_locations.json` so the dashboard map has pins immediately
+- Writes `reports/metadata.tsv` — a flat metadata table you can use to assign group labels for differential abundance analysis
+
+**Setup** — open `fetch_metadata.py` and set one variable:
+
+```python
+INPUT_DIR = "/path/to/your/kraken_reports"   # same as INPUT in run.py
+```
+
+**Run:**
+
+```bash
+python3 fetch_metadata.py
+```
+
+**Output:**
+
+```
+Scanning /path/to/reports for SRA accessions...
+  Found 9 sample(s), 9 unique accession(s):
+    cleaned_SRR35556007  →  SRR35556007
+    cleaned_SRR35939735  →  SRR35939735
+    ...
+
+Fetching NCBI metadata for 9 accessions...
+  Retrieved 9 record(s) from NCBI.
+
+Geocoding locations via OpenStreetMap Nominatim...
+  SRR35556007: geocoded 'USA: Colorado, Boulder County' → (40.093, -105.371)
+  SRR35939735: geocoded 'USA: Wisconsin' → (43.073, -89.401)
+  ...
+
+Wrote site_locations.json → pathogeniq/dashboard/site_locations.json
+Wrote metadata.tsv        → reports/metadata.tsv  (9 samples, 49 columns)
+```
+
+> **Paired-end files** (`_1.report` / `_2.report`) are automatically collapsed to one entry per accession — matching how the pipeline merges them.
+
+> **Offline / restricted networks:** If Nominatim is unreachable, coordinates are looked up from a built-in table covering all 50 US states and common Colorado counties. Add entries to `_US_FALLBACK` in the script for other locations.
+
+> **NCBI API key (optional):** Add your free NCBI API key to `NCBI_API_KEY` in the script to raise the rate limit from 3 to 10 requests/second. Get one at [ncbi.nlm.nih.gov/account](https://www.ncbi.nlm.nih.gov/account/).
 
 ---
 
@@ -413,9 +464,12 @@ reporting:
 | `scheduler/watcher.py` | Directory poller for automated pipeline triggering |
 | `dashboard/app.py` | FastAPI server — Basic Auth, map, sites, alerts, CUSUM, characterization APIs |
 | `dashboard/index.html` | Self-contained SPA — Chart.js + Leaflet.js bundled inline (no CDN) |
-| `dashboard/site_locations.json` | GPS coordinates for map view markers |
+| `dashboard/site_locations.json` | GPS coordinates for map view markers (auto-populated by `fetch_metadata.py`) |
 | `reporting/report.py` | JSON + HTML report generation with temporal signals |
 | `pipeline/runner.py` | End-to-end orchestrator — runs all steps in sequence |
+| `clustering/cluster.py` | Unsupervised hierarchical clustering of samples (auto-selects k) |
+| `clustering/differential.py` | Kruskal-Wallis differential abundance with BH-FDR correction |
+| `fetch_metadata.py` | Fetch NCBI SRA metadata, geocode locations, populate `site_locations.json` and `metadata.tsv` |
 
 ---
 
