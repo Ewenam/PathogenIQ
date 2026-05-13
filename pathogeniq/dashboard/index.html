@@ -1093,8 +1093,16 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <div id="network-empty" style="text-align:center;padding:48px 0;color:#666;display:none">
         No network data yet — run the pipeline first.
       </div>
+      <div id="network-toolbar" style="display:none;margin-bottom:6px">
+        <button onclick="reLayoutNetwork()" style="background:#1e2533;border:1px solid #2d3748;color:#8b949e;
+          padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px">↺ Re-layout</button>
+        <span id="network-info" style="margin-left:12px;font-size:12px;color:#666"></span>
+      </div>
       <canvas id="network-canvas" style="width:100%;border-radius:8px;background:#0d1117;cursor:pointer;display:none"></canvas>
-      <div id="network-legend" style="display:none;margin-top:8px;font-size:12px;color:#888;display:none">
+      <div id="network-tooltip" style="position:fixed;background:#1e2533;border:1px solid #2d3748;
+        border-radius:6px;padding:6px 10px;font-size:12px;color:#e2e8f0;pointer-events:none;
+        display:none;z-index:9999"></div>
+      <div id="network-legend" style="display:none;margin-top:8px;font-size:12px;color:#888">
         Node size = mean abundance &nbsp;·&nbsp; color = SBM community &nbsp;·&nbsp;
         edge opacity = |Spearman &rho;| &nbsp;·&nbsp; click a node to highlight neighbors
       </div>
@@ -1715,16 +1723,31 @@ function nodeRadius(n) {
 }
 
 function layoutForce(nodes, edges, W, H, iters) {
-  iters = iters || 180;
-  const k = Math.sqrt(W * H / (nodes.length || 1)) * 0.9;
-  nodes.forEach(n => { n.x = W * 0.1 + Math.random() * W * 0.8;
-                        n.y = H * 0.1 + Math.random() * H * 0.8; });
+  iters = iters || 260;
+  const k = Math.sqrt(W * H / (nodes.length || 1)) * 1.1;
+  const cx = W / 2, cy = H / 2;
+
+  // Circular init — converges better than random for clustered graphs
+  nodes.forEach((n, i) => {
+    const a = (i / nodes.length) * Math.PI * 2;
+    const r = Math.min(W, H) * 0.32;
+    n.x = cx + r * Math.cos(a);
+    n.y = cy + r * Math.sin(a);
+  });
+
   const nm = {};
   nodes.forEach(n => nm[n.id] = n);
+
+  // Identify nodes that have at least one edge (for post-layout isolated handling)
+  const hasEdge = new Set();
+  edges.forEach(e => { hasEdge.add(e.source); hasEdge.add(e.target); });
+
   for (let it = 0; it < iters; it++) {
-    const temp = k * 0.85 * (1 - it / iters);
+    const temp = k * 0.9 * (1 - it / iters);
+    const gravity = 0.05 * (1 - it / iters * 0.6); // decays as layout settles
     nodes.forEach(n => { n._fx = 0; n._fy = 0; });
-    // repulsion
+
+    // Repulsion between all pairs
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y;
@@ -1734,7 +1757,8 @@ function layoutForce(nodes, edges, W, H, iters) {
         nodes[j]._fx -= dx/d*f; nodes[j]._fy -= dy/d*f;
       }
     }
-    // attraction
+
+    // Spring attraction along edges
     edges.forEach(e => {
       const u = nm[e.source], v = nm[e.target];
       if (!u || !v) return;
@@ -1744,11 +1768,28 @@ function layoutForce(nodes, edges, W, H, iters) {
       u._fx -= dx/d*f; u._fy -= dy/d*f;
       v._fx += dx/d*f; v._fy += dy/d*f;
     });
+
+    // Centering gravity — prevents chain drift to canvas edges
+    nodes.forEach(n => {
+      n._fx += (cx - n.x) * gravity;
+      n._fy += (cy - n.y) * gravity;
+    });
+
     nodes.forEach(n => {
       const d = Math.sqrt(n._fx*n._fx + n._fy*n._fy) + 0.5;
       const mv = Math.min(d, temp);
-      n.x = Math.max(24, Math.min(W-24, n.x + n._fx/d*mv));
-      n.y = Math.max(24, Math.min(H-24, n.y + n._fy/d*mv));
+      n.x = Math.max(40, Math.min(W-40, n.x + n._fx/d*mv));
+      n.y = Math.max(40, Math.min(H-40, n.y + n._fy/d*mv));
+    });
+  }
+
+  // Post-layout: place isolated nodes (no edges) in a tidy row at the bottom
+  const isolated = nodes.filter(n => !hasEdge.has(n.id));
+  if (isolated.length > 0) {
+    const step = Math.min(60, (W - 80) / (isolated.length + 1));
+    isolated.forEach((n, i) => {
+      n.x = 40 + step * (i + 1);
+      n.y = H - 30;
     });
   }
 }
@@ -1794,13 +1835,26 @@ function renderNetwork() {
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1.2;
     ctx.stroke();
-    // label
-    if (r > 9 || n.id === _netSelected) {
-      ctx.font = `${Math.min(r * 0.9, 11)}px sans-serif`;
+    // label — full name always, truncate only if canvas pixel width demands it
+    if (r > 6 || n.id === _netSelected) {
+      const fontSize = Math.min(Math.max(r * 0.85, 9), 12);
+      ctx.font = `${fontSize}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillStyle = dimmed ? '#555' : '#c0cfdf';
-      const lbl = n.id.length > 14 ? n.id.slice(0,13) + '…' : n.id;
+      ctx.fillStyle = dimmed ? '#444' : '#c8d8ea';
+      // Measure and truncate only if genuinely too wide
+      let lbl = n.id;
+      while (lbl.length > 4 && ctx.measureText(lbl).width > 90) {
+        lbl = lbl.slice(0, -1);
+      }
+      if (lbl !== n.id) lbl += '…';
+      // Background pill for readability
+      const tw = ctx.measureText(lbl).width;
+      ctx.globalAlpha = dimmed ? 0.18 : 0.55;
+      ctx.fillStyle = '#0d1117';
+      ctx.fillRect(n.x - tw/2 - 2, n.y + r + 2, tw + 4, fontSize + 2);
+      ctx.globalAlpha = dimmed ? 0.18 : 1.0;
+      ctx.fillStyle = dimmed ? '#444' : '#c8d8ea';
       ctx.fillText(lbl, n.x, n.y + r + 3);
     }
     ctx.globalAlpha = 1.0;
@@ -1831,9 +1885,10 @@ async function initNetworkView() {
   const canvas = document.getElementById('network-canvas');
   canvas.style.display = '';
   document.getElementById('network-legend').style.display = '';
+  document.getElementById('network-toolbar').style.display = '';
 
   const W = canvas.parentElement.clientWidth || 800;
-  const H = Math.round(Math.min(W * 0.62, 560));
+  const H = Math.round(Math.min(W * 0.72, 640));
   canvas.width = W; canvas.height = H;
 
   _netNodeMap = {};
@@ -1841,6 +1896,13 @@ async function initNetworkView() {
 
   layoutForce(_netData.nodes, _netData.edges, W, H);
   renderNetwork();
+
+  // Info line
+  const info = document.getElementById('network-info');
+  if (info) info.textContent =
+    `${_netData.nodes.length} taxa · ${_netData.edges.length} co-occurrence edges`;
+
+  const tt = document.getElementById('network-tooltip');
 
   canvas.onclick = e => {
     const r = canvas.getBoundingClientRect();
@@ -1853,6 +1915,7 @@ async function initNetworkView() {
     _netSelected = hit === _netSelected ? null : hit;
     renderNetwork();
   };
+
   canvas.onmousemove = e => {
     const r = canvas.getBoundingClientRect();
     const mx = (e.clientX - r.left) * (canvas.width / r.width);
@@ -1862,7 +1925,28 @@ async function initNetworkView() {
       if (Math.hypot(n.x - mx, n.y - my) < nodeRadius(n) + 5) { hov = n; break; }
     }
     canvas.style.cursor = hov ? 'pointer' : 'default';
+    if (hov && tt) {
+      const neighbors = _netData.edges
+        .filter(e => e.source === hov.id || e.target === hov.id)
+        .map(e => e.source === hov.id ? e.target : e.source);
+      tt.innerHTML = `<strong>${hov.id}</strong><br>` +
+        `Community: ${hov.community} &nbsp;·&nbsp; Mean abundance: ${(hov.mean_abundance*100).toFixed(2)}%<br>` +
+        (neighbors.length ? `Co-occurs with: ${neighbors.slice(0,5).join(', ')}${neighbors.length>5?' …':''}` : 'No co-occurrence edges');
+      tt.style.left = (e.clientX + 14) + 'px';
+      tt.style.top  = (e.clientY - 40) + 'px';
+      tt.style.display = '';
+    } else if (tt) {
+      tt.style.display = 'none';
+    }
   };
+  canvas.onmouseleave = () => { if (tt) tt.style.display = 'none'; };
+}
+
+function reLayoutNetwork() {
+  if (!_netData) return;
+  const canvas = document.getElementById('network-canvas');
+  layoutForce(_netData.nodes, _netData.edges, canvas.width, canvas.height);
+  renderNetwork();
 }
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────
