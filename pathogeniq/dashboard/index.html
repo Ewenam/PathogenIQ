@@ -1037,6 +1037,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <div class="view-tabs">
         <button class="tab-btn active" id="tab-table" onclick="toggleView('table')">⊞ Table</button>
         <button class="tab-btn" id="tab-map" onclick="toggleView('map')">🗺 Map</button>
+        <button class="tab-btn" id="tab-network" onclick="toggleView('network')">⬡ Network</button>
+        <button class="tab-btn" id="tab-heatmap" onclick="toggleView('heatmap')">▦ Heatmap</button>
       </div>
       <div class="search-wrap">
         <input class="search-input" id="site-search" type="search"
@@ -1083,6 +1085,35 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <div id="map-no-locs" class="map-hint" style="display:none">
         📍 No site coordinates configured. Add them to
         <code>pathogeniq/dashboard/site_locations.json</code> to see sites on the map.
+      </div>
+    </div>
+
+    <!-- NETWORK view -->
+    <div id="view-network" style="display:none">
+      <div id="network-empty" style="text-align:center;padding:48px 0;color:#666;display:none">
+        No network data yet — run the pipeline first.
+      </div>
+      <canvas id="network-canvas" style="width:100%;border-radius:8px;background:#0d1117;cursor:pointer;display:none"></canvas>
+      <div id="network-legend" style="display:none;margin-top:8px;font-size:12px;color:#888;display:none">
+        Node size = mean abundance &nbsp;·&nbsp; color = SBM community &nbsp;·&nbsp;
+        edge opacity = |Spearman &rho;| &nbsp;·&nbsp; click a node to highlight neighbors
+      </div>
+    </div>
+
+    <!-- HEATMAP view -->
+    <div id="view-heatmap" style="display:none">
+      <div id="heatmap-empty" style="text-align:center;padding:48px 0;color:#666;display:none">
+        No abundance data yet — run the pipeline first.
+      </div>
+      <div id="heatmap-wrap" style="overflow-x:auto;display:none">
+        <canvas id="heatmap-canvas" style="display:block"></canvas>
+      </div>
+      <div id="heatmap-tooltip" style="position:fixed;background:#1e2533;border:1px solid #2d3748;
+        border-radius:6px;padding:6px 10px;font-size:12px;color:#e2e8f0;pointer-events:none;
+        display:none;z-index:9999"></div>
+      <div id="heatmap-legend" style="display:none;margin-top:8px;font-size:12px;color:#888">
+        Columns sorted by cluster &nbsp;·&nbsp; rows = top taxa by mean abundance &nbsp;·&nbsp;
+        color = log&#8321;&#8320; relative abundance &nbsp;·&nbsp; hover for details
       </div>
     </div>
 
@@ -1240,19 +1271,17 @@ async function loadLocations() {
 // ── View toggle ───────────────────────────────────────────────────────────────
 
 function toggleView(view) {
-  document.getElementById('view-table').style.display = view === 'table' ? '' : 'none';
-  document.getElementById('view-map').style.display   = view === 'map'   ? '' : 'none';
-  document.getElementById('tab-table').classList.toggle('active', view === 'table');
-  document.getElementById('tab-map').classList.toggle('active',   view === 'map');
-
+  ['table','map','network','heatmap'].forEach(v => {
+    document.getElementById('view-' + v).style.display = v === view ? '' : 'none';
+    document.getElementById('tab-' + v).classList.toggle('active', v === view);
+  });
   if (view === 'map') {
-    if (!_map) {
-      initMap();
-    } else {
-      requestAnimationFrame(() => _map.invalidateSize());
-    }
+    if (!_map) initMap();
+    else requestAnimationFrame(() => _map.invalidateSize());
     renderMapMarkers();
   }
+  if (view === 'network') initNetworkView();
+  if (view === 'heatmap') initHeatmapView();
 }
 
 // ── Search + filter ───────────────────────────────────────────────────────────
@@ -1671,6 +1700,335 @@ function renderMapMarkers() {
   } else if (bounds.length === 1) {
     _map.setView(bounds[0], 10);
   }
+}
+
+// ── Network graph ─────────────────────────────────────────────────────────────
+
+const COMM_COLORS = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f',
+                     '#edc948','#b07aa1','#ff9da7','#9c755f','#bab0ac'];
+let _netData = null;
+let _netSelected = null;
+let _netNodeMap = {};
+
+function nodeRadius(n) {
+  return Math.max(5, Math.min(22, 6 + Math.sqrt(n.mean_abundance * 600)));
+}
+
+function layoutForce(nodes, edges, W, H, iters) {
+  iters = iters || 180;
+  const k = Math.sqrt(W * H / (nodes.length || 1)) * 0.9;
+  nodes.forEach(n => { n.x = W * 0.1 + Math.random() * W * 0.8;
+                        n.y = H * 0.1 + Math.random() * H * 0.8; });
+  const nm = {};
+  nodes.forEach(n => nm[n.id] = n);
+  for (let it = 0; it < iters; it++) {
+    const temp = k * 0.85 * (1 - it / iters);
+    nodes.forEach(n => { n._fx = 0; n._fy = 0; });
+    // repulsion
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y;
+        const d = Math.sqrt(dx*dx + dy*dy) + 0.5;
+        const f = k * k / d;
+        nodes[i]._fx += dx/d*f; nodes[i]._fy += dy/d*f;
+        nodes[j]._fx -= dx/d*f; nodes[j]._fy -= dy/d*f;
+      }
+    }
+    // attraction
+    edges.forEach(e => {
+      const u = nm[e.source], v = nm[e.target];
+      if (!u || !v) return;
+      const dx = u.x - v.x, dy = u.y - v.y;
+      const d = Math.sqrt(dx*dx + dy*dy) + 0.5;
+      const f = d * d / k;
+      u._fx -= dx/d*f; u._fy -= dy/d*f;
+      v._fx += dx/d*f; v._fy += dy/d*f;
+    });
+    nodes.forEach(n => {
+      const d = Math.sqrt(n._fx*n._fx + n._fy*n._fy) + 0.5;
+      const mv = Math.min(d, temp);
+      n.x = Math.max(24, Math.min(W-24, n.x + n._fx/d*mv));
+      n.y = Math.max(24, Math.min(H-24, n.y + n._fy/d*mv));
+    });
+  }
+}
+
+function renderNetwork() {
+  const canvas = document.getElementById('network-canvas');
+  const ctx = canvas.getContext('2d');
+  const { nodes, edges } = _netData;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const neighbors = new Set();
+  if (_netSelected) {
+    edges.forEach(e => {
+      if (e.source === _netSelected) neighbors.add(e.target);
+      if (e.target === _netSelected) neighbors.add(e.source);
+    });
+  }
+
+  // edges
+  edges.forEach(e => {
+    const u = _netNodeMap[e.source], v = _netNodeMap[e.target];
+    if (!u || !v) return;
+    const active = !_netSelected || e.source === _netSelected || e.target === _netSelected;
+    ctx.beginPath();
+    ctx.moveTo(u.x, u.y);
+    ctx.lineTo(v.x, v.y);
+    const a = Math.abs(e.rho);
+    ctx.strokeStyle = active ? `rgba(120,160,220,${a*0.65+0.1})` : 'rgba(60,80,120,0.1)';
+    ctx.lineWidth = active ? a * 2.5 + 0.4 : 0.4;
+    ctx.stroke();
+  });
+
+  // nodes
+  nodes.forEach(n => {
+    const r = nodeRadius(n);
+    const dimmed = _netSelected && n.id !== _netSelected && !neighbors.has(n.id);
+    const col = COMM_COLORS[n.community % COMM_COLORS.length];
+    ctx.globalAlpha = dimmed ? 0.18 : 1.0;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    // label
+    if (r > 9 || n.id === _netSelected) {
+      ctx.font = `${Math.min(r * 0.9, 11)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = dimmed ? '#555' : '#c0cfdf';
+      const lbl = n.id.length > 14 ? n.id.slice(0,13) + '…' : n.id;
+      ctx.fillText(lbl, n.x, n.y + r + 3);
+    }
+    ctx.globalAlpha = 1.0;
+  });
+
+  // selected ring
+  if (_netSelected && _netNodeMap[_netSelected]) {
+    const n = _netNodeMap[_netSelected];
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, nodeRadius(n) + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+async function initNetworkView() {
+  if (_netData) { renderNetwork(); return; }
+  const resp = await safeFetch('/api/network');
+  if (!resp) return;
+  _netData = await resp.json();
+
+  if (!_netData.nodes || !_netData.nodes.length) {
+    document.getElementById('network-empty').style.display = '';
+    return;
+  }
+
+  const canvas = document.getElementById('network-canvas');
+  canvas.style.display = '';
+  document.getElementById('network-legend').style.display = '';
+
+  const W = canvas.parentElement.clientWidth || 800;
+  const H = Math.round(Math.min(W * 0.62, 560));
+  canvas.width = W; canvas.height = H;
+
+  _netNodeMap = {};
+  _netData.nodes.forEach(n => _netNodeMap[n.id] = n);
+
+  layoutForce(_netData.nodes, _netData.edges, W, H);
+  renderNetwork();
+
+  canvas.onclick = e => {
+    const r = canvas.getBoundingClientRect();
+    const mx = (e.clientX - r.left) * (canvas.width / r.width);
+    const my = (e.clientY - r.top) * (canvas.height / r.height);
+    let hit = null;
+    for (const n of _netData.nodes) {
+      if (Math.hypot(n.x - mx, n.y - my) < nodeRadius(n) + 5) { hit = n.id; break; }
+    }
+    _netSelected = hit === _netSelected ? null : hit;
+    renderNetwork();
+  };
+  canvas.onmousemove = e => {
+    const r = canvas.getBoundingClientRect();
+    const mx = (e.clientX - r.left) * (canvas.width / r.width);
+    const my = (e.clientY - r.top) * (canvas.height / r.height);
+    let hov = null;
+    for (const n of _netData.nodes) {
+      if (Math.hypot(n.x - mx, n.y - my) < nodeRadius(n) + 5) { hov = n; break; }
+    }
+    canvas.style.cursor = hov ? 'pointer' : 'default';
+  };
+}
+
+// ── Heatmap ───────────────────────────────────────────────────────────────────
+
+let _hmData = null;
+
+function logScale(v, lo, hi) {
+  const lv = Math.log10(v + 1e-7), llo = Math.log10(lo + 1e-7), lhi = Math.log10(hi + 1e-7);
+  return Math.max(0, Math.min(1, (lv - llo) / (lhi - llo + 1e-10)));
+}
+
+function heatColor(t) {
+  // dark navy → teal → yellow-green
+  const stops = [[13,17,51],[27,90,132],[32,178,170],[144,238,144],[255,255,100]];
+  t = Math.max(0, Math.min(1, t));
+  const seg = t * (stops.length - 1);
+  const i = Math.min(Math.floor(seg), stops.length - 2);
+  const f = seg - i;
+  return stops[i].map((c, k) => Math.round(c + f * (stops[i+1][k] - c)));
+}
+
+async function initHeatmapView() {
+  if (_hmData) { renderHeatmap(); return; }
+  const resp = await safeFetch('/api/abundance_matrix');
+  if (!resp) return;
+  _hmData = await resp.json();
+
+  if (!_hmData.taxa || !_hmData.taxa.length) {
+    document.getElementById('heatmap-empty').style.display = '';
+    return;
+  }
+  document.getElementById('heatmap-wrap').style.display = '';
+  document.getElementById('heatmap-legend').style.display = '';
+  renderHeatmap();
+}
+
+function renderHeatmap() {
+  const { taxa, samples, values, cluster_assignments } = _hmData;
+  const ca = cluster_assignments || {};
+
+  // Sort samples by cluster id
+  const sIdx = samples.map((s, i) => i).sort((a, b) => {
+    const ca_ = ca[samples[a]] ?? 99, cb_ = ca[samples[b]] ?? 99;
+    return ca_ - cb_;
+  });
+  const sortedSamples = sIdx.map(i => samples[i]);
+
+  const CELL_W = Math.max(14, Math.min(38, Math.floor(560 / samples.length)));
+  const CELL_H = 18;
+  const LABEL_W = 130;
+  const LABEL_H = 80;
+  const ANNOT_H = 10;  // cluster color bar height
+  const W = LABEL_W + samples.length * CELL_W + 2;
+  const H = LABEL_H + ANNOT_H + 6 + taxa.length * CELL_H + 2;
+
+  const canvas = document.getElementById('heatmap-canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  // global min/max for color scale
+  const allVals = values.flat().filter(v => v > 0);
+  const lo = allVals.length ? Math.min(...allVals) : 1e-5;
+  const hi = allVals.length ? Math.max(...allVals) : 1;
+
+  const clusterColors = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f','#edc948'];
+
+  // Cluster annotation bar (top)
+  const barY = LABEL_H + 2;
+  sortedSamples.forEach((s, col) => {
+    const cl = ca[s];
+    ctx.fillStyle = cl != null ? (clusterColors[cl % clusterColors.length] + '99') : '#333';
+    ctx.fillRect(LABEL_W + col * CELL_W, barY, CELL_W - 1, ANNOT_H);
+  });
+
+  // Cluster labels above bar
+  ctx.font = '10px sans-serif';
+  ctx.fillStyle = '#8b949e';
+  let lastCl = null, clStart = 0;
+  sortedSamples.forEach((s, col) => {
+    const cl = ca[s] ?? -1;
+    if (cl !== lastCl) {
+      if (lastCl !== null && lastCl !== -1) {
+        const midX = LABEL_W + (clStart + col) / 2 * CELL_W;
+        ctx.textAlign = 'center';
+        ctx.fillText(`C${lastCl}`, midX, barY - 2);
+      }
+      lastCl = cl; clStart = col;
+    }
+  });
+  if (lastCl != null && lastCl !== -1) {
+    const midX = LABEL_W + (clStart + sortedSamples.length) / 2 * CELL_W;
+    ctx.textAlign = 'center';
+    ctx.fillText(`C${lastCl}`, midX, barY - 2);
+  }
+
+  // Sample labels (rotated)
+  ctx.save();
+  ctx.font = `${Math.min(11, CELL_W - 2)}px sans-serif`;
+  ctx.fillStyle = '#8b949e';
+  sortedSamples.forEach((s, col) => {
+    const x = LABEL_W + col * CELL_W + CELL_W / 2;
+    ctx.save();
+    ctx.translate(x, LABEL_H - 4);
+    ctx.rotate(-Math.PI / 2.5);
+    ctx.textAlign = 'right';
+    const lbl = s.length > 12 ? s.slice(0, 11) + '…' : s;
+    ctx.fillText(lbl, 0, 0);
+    ctx.restore();
+  });
+  ctx.restore();
+
+  // Cells + row labels
+  const cellY0 = barY + ANNOT_H + 6;
+  taxa.forEach((taxon, row) => {
+    const rowVals = values[row];
+    const y = cellY0 + row * CELL_H;
+
+    // Row label
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#c0cfdf';
+    const lbl = taxon.length > 18 ? taxon.slice(0, 17) + '…' : taxon;
+    ctx.fillText(lbl, LABEL_W - 4, y + CELL_H * 0.68);
+
+    sIdx.forEach((origCol, col) => {
+      const v = rowVals[origCol] || 0;
+      const t = v > 0 ? logScale(v, lo, hi) : 0;
+      const [rr, gg, bb] = heatColor(t);
+      ctx.fillStyle = v > 0 ? `rgb(${rr},${gg},${bb})` : '#0d1117';
+      ctx.fillRect(LABEL_W + col * CELL_W, y, CELL_W - 1, CELL_H - 1);
+    });
+  });
+
+  // Tooltip
+  const tt = document.getElementById('heatmap-tooltip');
+  canvas.onmousemove = e => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const cx = (e.clientX - rect.left) * scaleX;
+    const cy = (e.clientY - rect.top) * scaleY;
+    const col = Math.floor((cx - LABEL_W) / CELL_W);
+    const row = Math.floor((cy - cellY0) / CELL_H);
+    if (col >= 0 && col < sortedSamples.length && row >= 0 && row < taxa.length) {
+      const s = sortedSamples[col];
+      const v = values[row][sIdx[col]];
+      const cl = ca[s] != null ? ` · Cluster ${ca[s]}` : '';
+      tt.textContent = `${taxa[row]} | ${s}${cl} | ${(v * 100).toFixed(3)}%`;
+      tt.style.left = (e.clientX + 12) + 'px';
+      tt.style.top  = (e.clientY - 28) + 'px';
+      tt.style.display = '';
+    } else {
+      tt.style.display = 'none';
+    }
+  };
+  canvas.onmouseleave = () => { tt.style.display = 'none'; };
+}
+
+// helper: fetch with API prefix, return null on failure
+async function safeFetch(path) {
+  try {
+    const r = await fetch(API + path);
+    if (!r.ok) return null;
+    return r;
+  } catch { return null; }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────

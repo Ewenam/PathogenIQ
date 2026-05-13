@@ -155,6 +155,26 @@ def run(
         )
         console.print(f"  Communities found: K={sbm_result.k}")
 
+    # ── Step 4.5: Build graph_data dict for report ─────────────────────────────
+    graph_data: dict = {"nodes": [], "edges": []}
+    if sbm_result is not None:
+        rel = sampleset.relative_abundance
+        for i, taxon in enumerate(taxa_names):
+            mean_abund = float(rel.loc[taxon].mean()) if taxon in rel.index else 0.0
+            graph_data["nodes"].append({
+                "id": taxon,
+                "community": int(sbm_result.labels[i]),
+                "mean_abundance": round(mean_abund, 6),
+            })
+        for i in range(len(taxa_names)):
+            for j in range(i + 1, len(taxa_names)):
+                if adj[i, j] == 1:
+                    graph_data["edges"].append({
+                        "source": taxa_names[i],
+                        "target": taxa_names[j],
+                        "rho": round(float(rho_matrix[i, j]), 4),
+                    })
+
     # ── Step 5: Novelty detection ─────────────────────────────────────────────
     console.rule("Step 5: Novelty Detection")
     from ..novelty.detector import compute_novelty_scores
@@ -166,10 +186,61 @@ def run(
         if score > 0.5:
             console.print(f"  [yellow]Novelty flag:[/yellow] {name} (score={score:.3f})")
 
-    # ── Step 5.5: VQ-VAE sequence embedding (optional) ───────────────────────
+    # ── Step 5.5: Unsupervised clustering + differential abundance ────────────
+    console.rule("Step 5.5: Sample Clustering & Differential Abundance")
+    cluster_data: dict = {"n_clusters": 0, "assignments": {}, "silhouette": 0.0, "differential": []}
+    try:
+        from ..clustering.cluster import cluster_samples
+        from ..clustering.differential import differential_abundance
+
+        cluster_result = cluster_samples(sampleset)
+        console.print(
+            f"  {cluster_result.n_clusters} clusters found "
+            f"(silhouette={cluster_result.silhouette:.3f})"
+        )
+
+        diff_results = differential_abundance(sampleset, cluster_result.labels)
+        n_sig = sum(1 for r in diff_results if r.significant)
+        console.print(f"  Differential taxa (BH p<0.05): {n_sig} / {len(diff_results)}")
+
+        cluster_data = {
+            "n_clusters": cluster_result.n_clusters,
+            "silhouette": cluster_result.silhouette,
+            "assignments": cluster_result.labels,
+            "differential": [
+                {
+                    "taxon": r.taxon,
+                    "H_stat": r.H_stat,
+                    "p_value": r.p_value,
+                    "p_adj": r.p_adj,
+                    "significant": r.significant,
+                    "cluster_means": r.cluster_means,
+                    "fold_change": r.fold_change,
+                }
+                for r in diff_results
+            ],
+        }
+    except Exception as exc:
+        console.print(f"  [yellow]Clustering skipped: {exc}[/yellow]")
+
+    # Build abundance matrix (top 50 taxa by mean abundance, all samples)
+    abundance_matrix: dict = {"taxa": [], "samples": [], "values": []}
+    try:
+        rel_full = sampleset.relative_abundance  # taxa × samples
+        top_taxa = rel_full.mean(axis=1).nlargest(50).index.tolist()
+        abundance_matrix = {
+            "taxa": top_taxa,
+            "samples": list(rel_full.columns),
+            "values": rel_full.loc[top_taxa].round(6).values.tolist(),
+            "cluster_assignments": cluster_data.get("assignments", {}),
+        }
+    except Exception:
+        pass
+
+    # ── Step 5.75: VQ-VAE sequence embedding (optional) ──────────────────────
     vqvae_results: dict = {}
     if cfg.use_vqvae:
-        console.rule("Step 5.5: VQ-VAE Sequence Embedding")
+        console.rule("Step 5.75: VQ-VAE Sequence Embedding")
         from ..embedding.embedder import score_sequences, load_model
         from pathlib import Path as _P
 
@@ -310,7 +381,9 @@ def run(
     json_path = out_dir / "report.json"
     html_path = out_dir / "report.html"
     save_json(risk_scores, json_path, meta=meta,
-              baselines=baselines, cusum_results=cusum_results, trend_results=trend_results)
+              baselines=baselines, cusum_results=cusum_results, trend_results=trend_results,
+              graph_data=graph_data, cluster_data=cluster_data,
+              abundance_matrix=abundance_matrix)
     save_html(risk_scores, html_path, meta=meta,
               baselines=baselines, cusum_results=cusum_results, trend_results=trend_results)
 

@@ -129,6 +129,31 @@ async def locations():
     return JSONResponse({})
 
 
+@app.get("/api/network")
+async def network():
+    """Return co-occurrence network (nodes + edges) from the latest report."""
+    report = _latest_report()
+    return JSONResponse(report.get("network", {"nodes": [], "edges": []}))
+
+
+@app.get("/api/clusters")
+async def clusters():
+    """Return unsupervised cluster assignments and differential abundance results."""
+    report = _latest_report()
+    return JSONResponse(report.get("clusters", {
+        "n_clusters": 0, "assignments": {}, "silhouette": 0.0, "differential": []
+    }))
+
+
+@app.get("/api/abundance_matrix")
+async def abundance_matrix():
+    """Return the top-50-taxa × all-samples abundance matrix for heatmap rendering."""
+    report = _latest_report()
+    return JSONResponse(report.get("abundance_matrix", {
+        "taxa": [], "samples": [], "values": [], "cluster_assignments": {}
+    }))
+
+
 @app.get("/api/site/{site_name}/history")
 async def site_history(site_name: str, weeks: int = 16):
     store = _store()

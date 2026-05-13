@@ -17,7 +17,10 @@ def _risk_color(level: str) -> str:
 
 
 def to_dict(risk_scores: list[RiskScore], meta: dict | None = None,
-            baselines=None, cusum_results=None, trend_results=None) -> dict:
+            baselines=None, cusum_results=None, trend_results=None,
+            graph_data: dict | None = None,
+            cluster_data: dict | None = None,
+            abundance_matrix: dict | None = None) -> dict:
     return {
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "metadata": meta or {},
@@ -28,6 +31,9 @@ def to_dict(risk_scores: list[RiskScore], meta: dict | None = None,
             "moderate": sum(1 for r in risk_scores if r.level == "MODERATE"),
             "low": sum(1 for r in risk_scores if r.level == "LOW"),
         },
+        "network": graph_data or {"nodes": [], "edges": []},
+        "clusters": cluster_data or {"n_clusters": 0, "assignments": {}, "differential": []},
+        "abundance_matrix": abundance_matrix or {"taxa": [], "samples": [], "values": []},
         "samples": [
             {
                 "name": r.sample_name,
@@ -56,11 +62,15 @@ def to_dict(risk_scores: list[RiskScore], meta: dict | None = None,
 
 
 def save_json(risk_scores: list[RiskScore], output_path: str | Path, meta: dict | None = None,
-              baselines=None, cusum_results=None, trend_results=None):
+              baselines=None, cusum_results=None, trend_results=None,
+              graph_data: dict | None = None,
+              cluster_data: dict | None = None,
+              abundance_matrix: dict | None = None):
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
-        json.dump(to_dict(risk_scores, meta, baselines, cusum_results, trend_results), f, indent=2)
+        json.dump(to_dict(risk_scores, meta, baselines, cusum_results, trend_results,
+                          graph_data, cluster_data, abundance_matrix), f, indent=2)
     print(f"  JSON report → {output_path}")
 
 
