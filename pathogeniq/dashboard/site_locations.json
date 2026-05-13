@@ -1,8 +1,15 @@
 {
-  "_comment": "Map site names (from your Kraken2 report) to GPS coordinates for the map view.",
-  "_format":  "Keys must match the site name exactly as it appears in the pipeline report.",
-  "_example": {
-    "SRR29756825": { "lat": 33.748, "lon": -84.387, "label": "Atlanta WWTP" },
-    "SRR29756826": { "lat": 40.712, "lon": -74.006, "label": "NYC East River" }
-  }
+  "_comment": "GPS coordinates for PathogenIQ map view. Keys must match sample names exactly as they appear in the pipeline report (after paired-end merging).",
+  "_sources": "NCBI SRA BioSample metadata: Wisconsin State Laboratory of Hygiene (BioProject SRR3593973x) and Colorado SARS-CoV-2 wastewater surveillance (BioProject SRR3555600x)",
+
+  "cleaned_SRR35939735": {"lat": 43.073, "lon": -89.401, "label": "Wisconsin SLOH (Oct 19)"},
+  "cleaned_SRR35939736": {"lat": 43.073, "lon": -89.401, "label": "Wisconsin SLOH (Oct 13)"},
+  "cleaned_SRR35939737": {"lat": 43.073, "lon": -89.401, "label": "Wisconsin SLOH (Oct 20)"},
+  "cleaned_SRR35939738": {"lat": 43.073, "lon": -89.401, "label": "Wisconsin SLOH (Oct 7)"},
+  "cleaned_SRR35939739": {"lat": 43.073, "lon": -89.401, "label": "Wisconsin SLOH (Oct 2)"},
+  "cleaned_SRR35939740": {"lat": 43.073, "lon": -89.401, "label": "Wisconsin SLOH (Oct 6)"},
+  "cleaned_SRR35556007": {"lat": 40.093, "lon": -105.371, "label": "Boulder County WWTP (CO)"},
+  "cleaned_SRR35556008": {"lat": 39.648, "lon": -104.834, "label": "Arapahoe County WWTP (CO)"},
+  "cleaned_SRR35556009": {"lat": 39.871, "lon": -104.731, "label": "Adams County WWTP (CO)"},
+  "clean_wastewater":    {"lat": 43.073, "lon": -89.401, "label": "Synthetic control"}
 }

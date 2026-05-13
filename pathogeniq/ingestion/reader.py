@@ -56,6 +56,53 @@ def load_kraken_report(path: Path, rank: str = "G") -> pd.Series:
     return pd.Series(counts, dtype=float, name=path.stem)
 
 
+def _merge_paired_reports(
+    samples: list[Sample],
+    series_list: list[pd.Series],
+) -> tuple[list[Sample], list[pd.Series]]:
+    """
+    Detect paired-end Kraken2 reports named <base>_1 / <base>_2 and merge
+    them by summing raw counts.  Equivalent to running Kraken2 with --paired.
+
+    Samples without a matching counterpart are kept as-is (name unchanged).
+    """
+    name_map: dict[str, tuple[Sample, pd.Series]] = {
+        s.name: (s, ser) for s, ser in zip(samples, series_list)
+    }
+    processed: set[str] = set()
+    out_samples: list[Sample] = []
+    out_series: list[pd.Series] = []
+
+    for s, ser in zip(samples, series_list):
+        if s.name in processed:
+            continue
+
+        m = re.match(r'^(.+)_([12])$', s.name)
+        if m:
+            base = m.group(1)
+            other = base + ('_2' if m.group(2) == '1' else '_1')
+            if other in name_map and other not in processed:
+                _, other_ser = name_map[other]
+                merged = ser.add(other_ser, fill_value=0)
+                merged.name = base
+                out_series.append(merged)
+                out_samples.append(Sample(name=base, kraken_report=s.kraken_report))
+                processed.update({s.name, other})
+                continue
+
+        # Unpaired — keep as-is
+        out_series.append(ser)
+        out_samples.append(s)
+        processed.add(s.name)
+
+    n_merged = (len(samples) - len(out_samples))
+    if n_merged > 0:
+        print(f"  Merged {n_merged} paired-end file(s) into "
+              f"{len(out_samples) - (len(samples) - 2 * n_merged)} combined sample(s)")
+
+    return out_samples, out_series
+
+
 def load_sample_directory(
     directory: str | Path,
     rank: str = "G",
@@ -63,6 +110,8 @@ def load_sample_directory(
 ) -> SampleSet:
     """
     Load all Kraken2 reports from a directory.
+    Automatically merges paired-end reports (<name>_1 / <name>_2) by summing
+    their raw counts — equivalent to Kraken2 --paired processing.
     Builds a taxa × samples count matrix and computes relative abundance.
     """
     directory = Path(directory)
@@ -72,12 +121,13 @@ def load_sample_directory(
     if not report_files:
         raise FileNotFoundError(f"No Kraken2 reports found in {directory}")
 
-    samples = []
-    series_list = []
+    raw_samples: list[Sample] = []
+    raw_series: list[pd.Series] = []
     for rp in report_files:
-        sample = Sample(name=rp.stem, kraken_report=rp)
-        samples.append(sample)
-        series_list.append(load_kraken_report(rp, rank=rank))
+        raw_samples.append(Sample(name=rp.stem, kraken_report=rp))
+        raw_series.append(load_kraken_report(rp, rank=rank))
+
+    samples, series_list = _merge_paired_reports(raw_samples, raw_series)
 
     counts = pd.concat(series_list, axis=1).fillna(0)
     rel = counts.div(counts.sum(axis=0), axis=1).fillna(0)
