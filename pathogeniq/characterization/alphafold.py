@@ -107,7 +107,8 @@ def predict_structure_esmfold(sequence: str, timeout: int = 120) -> tuple[str, f
         resp.raise_for_status()
         pdb_str = resp.text
 
-        # Extract mean pLDDT from REMARK records in PDB output
+        # ESMFold stores per-residue pLDDT in the B-factor column (cols 61-66, 0-indexed 60:66).
+        # The API returns values in the 0–1 range (e.g. 0.87 = 87% confidence), NOT 0–100.
         plddt_values = []
         for line in pdb_str.split("\n"):
             if line.startswith("ATOM") and len(line) > 60:
@@ -115,10 +116,20 @@ def predict_structure_esmfold(sequence: str, timeout: int = 120) -> tuple[str, f
                     plddt_values.append(float(line[60:66].strip()))
                 except ValueError:
                     pass
-        confidence = float(sum(plddt_values) / len(plddt_values)) if plddt_values else 0.0
+
+        if not plddt_values:
+            # API returned no ATOM records — log the response prefix for diagnosis
+            preview = pdb_str[:200].replace("\n", " ") if pdb_str else "<empty>"
+            print(f"    [warn] ESMFold returned no ATOM records. Response: {preview}")
+            return "", 0.0
+
+        # Scale 0–1 → 0–100 to match the StructurePrediction.confidence units
+        raw_mean = sum(plddt_values) / len(plddt_values)
+        confidence = raw_mean * 100.0 if raw_mean <= 1.0 else raw_mean
 
         return pdb_str, confidence
     except Exception as e:
+        print(f"    [warn] ESMFold request failed: {e}")
         return "", 0.0
 
 
