@@ -62,6 +62,13 @@ LAUNCH_DASHBOARD = True
 # Dashboard port
 DASHBOARD_PORT = 8765
 
+# Dashboard login credentials (shown in browser when you open the dashboard)
+DASH_USER = "admin"
+DASH_PASS = "pathogeniq"   # change this to something private
+
+# Set to False to disable the login prompt entirely (not recommended on shared servers)
+DASH_AUTH = True
+
 # For advanced graph/SBM params (spearman_threshold, min_prevalence, etc.)
 # edit configs/default.yaml directly.
 
@@ -153,6 +160,9 @@ def main():
         print(f"\nLaunching dashboard → http://localhost:{DASHBOARD_PORT}")
         print("  Press Ctrl+C to stop.\n")
         env_overrides["PATHOGENIQ_REPORT"] = str(report_json)
+        env_overrides["PATHOGENIQ_DASH_USER"] = DASH_USER
+        env_overrides["PATHOGENIQ_DASH_PASS"] = DASH_PASS
+        env_overrides["PATHOGENIQ_DASH_AUTH"] = "true" if DASH_AUTH else "false"
         _run_cmd([
             str(PYTHON), str(PATHOGENIQ), "dashboard",
             "--report", str(report_json),
