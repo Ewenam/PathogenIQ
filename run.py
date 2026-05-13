@@ -52,6 +52,10 @@ RANK = "G"
 # Risk score threshold to trigger an alert (0–1). 0.6 is a good starting point.
 ALERT_THRESHOLD = 0.6
 
+# Run ESMFold protein structure prediction + NCBI virulence annotation on flagged taxa?
+# Requires internet access. Adds ~30–60s per flagged pathogen.
+CHARACTERIZE = False
+
 # Launch the dashboard automatically after the run? (opens http://localhost:8765)
 LAUNCH_DASHBOARD = True
 
@@ -114,6 +118,7 @@ def main():
         "--rank", RANK,
         "--output", OUTPUT_DIR,
         "--alert-threshold", str(ALERT_THRESHOLD),
+        *(["--characterize"] if CHARACTERIZE else []),
     ]
 
     # Point at the project config so graph params are picked up
