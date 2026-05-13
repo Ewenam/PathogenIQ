@@ -1,0 +1,37 @@
+kraken2:
+  db_path: ""               # path to Kraken2 database (set this)
+  confidence: 0.1           # classification confidence threshold
+  threads: 4
+  min_hit_groups: 3
+
+graph:
+  spearman_threshold: 0.45  # |rho| edge inclusion threshold
+  fdr_alpha: 0.05           # Benjamini-Hochberg FDR correction alpha
+  min_prevalence: 0.1       # min fraction of samples with taxon present
+  min_total_reads: 50       # min summed reads across all samples
+
+sbm:
+  max_k: 12                 # max communities to try
+  n_init: 10                # EM random initializations
+  max_iter: 300
+
+vqvae:
+  kmer_k: 6
+  codebook_size: 512
+  code_dim: 64
+  model_path: ""            # path to pretrained VQ-VAE checkpoint
+
+novelty:
+  anomaly_threshold: 2.5    # z-score above which a sample is flagged
+
+risk:
+  alert_threshold: 0.6      # risk score [0,1] to trigger alert
+
+alphafold:
+  use_esmfold_api: true     # use ESMFold API (no local GPU required)
+  esmfold_url: "https://api.esmatlas.com/foldSequence/v1/pdb/"
+  local_model_path: ""      # path to local AlphaFold weights (optional)
+
+reporting:
+  output_dir: "./reports"
+  formats: ["json", "html"]
