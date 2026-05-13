@@ -3,14 +3,15 @@ pipeline/runner.py
 Orchestrates the full PathogenIQ pipeline end-to-end.
 
 Flow:
-  1. Ingest  — load Kraken2 reports or raw FASTQs
-  2. Filter  — remove rare/low-prevalence taxa
-  3. Graph   — build FDR-corrected co-occurrence network
-  4. SBM     — fit stochastic block model, find communities
-  5. Novelty — score each sample for anomalous profiles
-  6. Risk    — compute composite risk score per sample
-  7. Report  — save JSON + HTML reports
-  8. Alert   — print/return alerts for HIGH/CRITICAL samples
+  1. Ingest      — load Kraken2 reports or raw FASTQs
+  2. Filter      — remove rare/low-prevalence taxa
+  3. Graph       — build FDR-corrected co-occurrence network
+  4. SBM         — fit stochastic block model, find communities
+  5. Novelty     — score each sample for anomalous profiles
+  6. Risk        — compute composite risk score per sample
+  6.5 Temporal   — baseline z-score, CUSUM changepoint, trend + forecast
+  7. Report      — save JSON + HTML reports (with temporal charts)
+  8. Alert       — print/return alerts for HIGH/CRITICAL/trending samples
 """
 from __future__ import annotations
 
@@ -34,6 +35,12 @@ class PipelineConfig:
     anomaly_contamination: float = 0.1
     # Risk
     alert_threshold: float = 0.6
+    # Temporal
+    temporal_window: int = 8        # weeks of history for baseline
+    cusum_k: float = 0.5            # CUSUM allowance parameter
+    cusum_h: float = 4.0            # CUSUM alert threshold
+    db_path: str = ""               # SQLite history DB path (default: ~/.pathogeniq/history.db)
+    run_date: str = ""              # ISO date for this run (default: today)
     # Reporting
     output_dir: str = "./reports"
 
@@ -162,6 +169,59 @@ def run(
         color = {"LOW": "green", "MODERATE": "yellow", "HIGH": "red", "CRITICAL": "bold red"}.get(r.level, "white")
         console.print(f"  [{color}]{r.level:8s}[/{color}]  {r.sample_name:<30s}  score={r.score:.3f}")
 
+    # ── Step 6.5: Temporal analysis ───────────────────────────────────────────
+    console.rule("Step 6.5: Temporal Analysis")
+    from ..temporal.store import TimeSeriesStore, DEFAULT_DB
+    from ..temporal.baseline import compute_baselines_all_sites
+    from ..temporal.cusum import run_cusum_all_sites
+    from ..temporal.trend import analyze_trends_all_sites
+    from pathlib import Path as _Path
+
+    db_path = _Path(cfg.db_path) if cfg.db_path else DEFAULT_DB
+    store = TimeSeriesStore(db_path)
+    n_runs = store.run_count()
+    console.print(f"  History DB: {db_path} ({n_runs} previous runs)")
+
+    # Compute temporal signals BEFORE recording this run
+    baselines = compute_baselines_all_sites(store, risk_scores, window=cfg.temporal_window)
+    cusum_results = run_cusum_all_sites(store, risk_scores, window=cfg.temporal_window * 2,
+                                        k=cfg.cusum_k, h=cfg.cusum_h)
+    trend_results = analyze_trends_all_sites(store, risk_scores, window=cfg.temporal_window * 2)
+
+    # Print temporal summary
+    temporal_alerts = []
+    for rs in risk_scores:
+        name = rs.sample_name
+        bl = baselines.get(name)
+        cu = cusum_results.get(name)
+        tr = trend_results.get(name)
+
+        flags = []
+        if bl and bl.is_anomaly:
+            flags.append(f"[yellow]BASELINE+{bl.pct_above_baseline:.0f}%[/yellow]")
+        if cu and cu.alert:
+            flags.append(f"[red]CUSUM({cu.signal_strength})[/red]")
+        if tr and tr.trend == "increasing" and tr.is_significant:
+            flags.append(f"[orange1]TREND↑(τ={tr.tau:.2f})[/orange1]")
+
+        flag_str = "  ".join(flags) if flags else "[dim]stable[/dim]"
+        console.print(f"  {name:<30s}  z={bl.z_score:+.2f}  CUSUM={cu.cusum_upper:.2f}  {flag_str}")
+
+        if flags:
+            temporal_alerts.append(name)
+
+    # Record this run to history
+    run_date = cfg.run_date or None
+    store.record_run(risk_scores, sampleset, run_date=run_date, input_path=str(input_path), rank=rank)
+    console.print(f"  Run recorded to history (total runs: {store.run_count()})")
+
+    # Add temporal alerts to main alert list
+    for name in temporal_alerts:
+        if not any(a.sample_name == name for a in alerts):
+            matching = next((r for r in risk_scores if r.sample_name == name), None)
+            if matching:
+                alerts.append(matching)
+
     # ── Step 7: Characterization (optional) ───────────────────────────────────
     characterization_results = {}
     if run_characterization and alerts:
@@ -185,8 +245,10 @@ def run(
     meta = {"input": str(input_path), "rank": rank, "n_samples": len(sampleset.samples)}
     json_path = out_dir / "report.json"
     html_path = out_dir / "report.html"
-    save_json(risk_scores, json_path, meta=meta)
-    save_html(risk_scores, html_path, meta=meta)
+    save_json(risk_scores, json_path, meta=meta,
+              baselines=baselines, cusum_results=cusum_results, trend_results=trend_results)
+    save_html(risk_scores, html_path, meta=meta,
+              baselines=baselines, cusum_results=cusum_results, trend_results=trend_results)
 
     if alerts:
         console.rule(f"[bold red]ALERTS ({len(alerts)} samples)[/bold red]")
@@ -204,5 +266,11 @@ def run(
         "novelty_scores": novelty_scores,
         "alerts": alerts,
         "characterization": characterization_results,
+        "temporal": {
+            "baselines": baselines,
+            "cusum": cusum_results,
+            "trends": trend_results,
+            "store": store,
+        },
         "report_paths": {"json": str(json_path), "html": str(html_path)},
     }

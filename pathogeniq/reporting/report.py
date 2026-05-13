@@ -16,7 +16,8 @@ def _risk_color(level: str) -> str:
     return {"LOW": "#27ae60", "MODERATE": "#f39c12", "HIGH": "#e67e22", "CRITICAL": "#e74c3c"}.get(level, "#95a5a6")
 
 
-def to_dict(risk_scores: list[RiskScore], meta: dict | None = None) -> dict:
+def to_dict(risk_scores: list[RiskScore], meta: dict | None = None,
+            baselines=None, cusum_results=None, trend_results=None) -> dict:
     return {
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "metadata": meta or {},
@@ -36,38 +37,62 @@ def to_dict(risk_scores: list[RiskScore], meta: dict | None = None) -> dict:
                 "community_signal": round(r.community_signal, 4),
                 "novelty_signal": round(r.novelty_signal, 4),
                 "breakdown": r.breakdown,
+                "temporal": {
+                    "z_score": round(baselines[r.sample_name].z_score, 3) if baselines and r.sample_name in baselines else None,
+                    "pct_above_baseline": baselines[r.sample_name].pct_above_baseline if baselines and r.sample_name in baselines else None,
+                    "baseline_anomaly": baselines[r.sample_name].is_anomaly if baselines and r.sample_name in baselines else None,
+                    "cusum": round(cusum_results[r.sample_name].cusum_upper, 3) if cusum_results and r.sample_name in cusum_results else None,
+                    "cusum_alert": cusum_results[r.sample_name].alert if cusum_results and r.sample_name in cusum_results else None,
+                    "cusum_signal": cusum_results[r.sample_name].signal_strength if cusum_results and r.sample_name in cusum_results else None,
+                    "trend": trend_results[r.sample_name].trend if trend_results and r.sample_name in trend_results else None,
+                    "trend_tau": round(trend_results[r.sample_name].tau, 3) if trend_results and r.sample_name in trend_results else None,
+                    "forecast_next": trend_results[r.sample_name].forecast_next if trend_results and r.sample_name in trend_results else None,
+                    "trend_summary": trend_results[r.sample_name].summary if trend_results and r.sample_name in trend_results else None,
+                },
             }
             for r in risk_scores
         ],
     }
 
 
-def save_json(risk_scores: list[RiskScore], output_path: str | Path, meta: dict | None = None):
+def save_json(risk_scores: list[RiskScore], output_path: str | Path, meta: dict | None = None,
+              baselines=None, cusum_results=None, trend_results=None):
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
-        json.dump(to_dict(risk_scores, meta), f, indent=2)
+        json.dump(to_dict(risk_scores, meta, baselines, cusum_results, trend_results), f, indent=2)
     print(f"  JSON report → {output_path}")
 
 
-def save_html(risk_scores: list[RiskScore], output_path: str | Path, meta: dict | None = None):
+def save_html(risk_scores: list[RiskScore], output_path: str | Path, meta: dict | None = None,
+              baselines=None, cusum_results=None, trend_results=None):
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    data = to_dict(risk_scores, meta)
+    data = to_dict(risk_scores, meta, baselines, cusum_results, trend_results)
     summary = data["summary"]
 
     rows = ""
     for s in data["samples"]:
         color = _risk_color(s["level"])
         pathogens = ", ".join(p["taxon"] for p in s["detected_pathogens"]) or "—"
+        t = s.get("temporal") or {}
+        z = f"{t['z_score']:+.2f}" if t.get("z_score") is not None else "—"
+        cusum = f"{t['cusum']:.2f}" if t.get("cusum") is not None else "—"
+        cusum_flag = " ⚠" if t.get("cusum_alert") else ""
+        trend = t.get("trend", "—")
+        trend_arrow = {"increasing": "↑", "decreasing": "↓", "stable": "→"}.get(trend, "—")
+        trend_color = {"increasing": "#e74c3c", "decreasing": "#27ae60", "stable": "#888"}.get(trend, "#888")
+        forecast = f"{t['forecast_next']:.3f}" if t.get("forecast_next") is not None else "—"
         rows += f"""
         <tr>
           <td><strong>{s["name"]}</strong></td>
           <td><span style="color:{color};font-weight:bold">{s["level"]}</span></td>
           <td>{s["score"]:.3f}</td>
           <td style="font-size:12px">{pathogens}</td>
-          <td>{s["community_signal"]:.3f}</td>
-          <td>{s["novelty_signal"]:.3f}</td>
+          <td>{z}</td>
+          <td>{cusum}{cusum_flag}</td>
+          <td style="color:{trend_color};font-weight:bold">{trend_arrow} {trend}</td>
+          <td>{forecast}</td>
         </tr>"""
 
     html = f"""<!DOCTYPE html>
@@ -106,7 +131,7 @@ def save_html(risk_scores: list[RiskScore], output_path: str | Path, meta: dict 
 <table>
   <tr>
     <th>Sample</th><th>Risk Level</th><th>Score</th>
-    <th>Detected Pathogens</th><th>Community Signal</th><th>Novelty Signal</th>
+    <th>Detected Pathogens</th><th>Z-Score</th><th>CUSUM</th><th>Trend</th><th>Forecast</th>
   </tr>
   {rows}
 </table>
