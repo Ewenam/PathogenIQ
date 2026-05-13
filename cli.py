@@ -142,5 +142,39 @@ def summary(report_json):
     console.print(table)
 
 
+@cli.command()
+@click.option("--db", default=None, envvar="PATHOGENIQ_DB",
+              help="Path to history SQLite DB (default: ~/.pathogeniq/history.db).")
+@click.option("--report", default="./reports/report.json", show_default=True,
+              envvar="PATHOGENIQ_REPORT", help="Path to latest report.json.")
+@click.option("--host", default="0.0.0.0", show_default=True, help="Bind host.")
+@click.option("--port", default=8765, show_default=True, help="Bind port.")
+def dashboard(db, report, host, port):
+    """
+    Launch the PathogenIQ real-time web dashboard.
+
+    Reads data from the SQLite history store and the latest report.json.
+
+    Example:\n
+      pathogeniq dashboard\n
+      pathogeniq dashboard --report ./reports/report.json --port 8765
+    """
+    import os
+    import uvicorn
+
+    if db:
+        os.environ["PATHOGENIQ_DB"] = db
+    os.environ["PATHOGENIQ_REPORT"] = report
+
+    click.echo(f"PathogenIQ Dashboard → http://localhost:{port}")
+    click.echo(f"  Report: {report}")
+    uvicorn.run(
+        "pathogeniq.dashboard.app:app",
+        host=host,
+        port=port,
+        log_level="warning",
+    )
+
+
 if __name__ == "__main__":
     cli()

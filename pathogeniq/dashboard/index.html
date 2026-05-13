@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PathogenIQ — Biosurveillance Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:       #0d1117;
+    --bg2:      #161b22;
+    --bg3:      #21262d;
+    --border:   #30363d;
+    --text:     #e6edf3;
+    --text2:    #8b949e;
+    --accent:   #58a6ff;
+    --critical: #f85149;
+    --high:     #ff7b72;
+    --moderate: #d29922;
+    --low:      #3fb950;
+    --cusum:    #bc8cff;
+    --font:     'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono:     'JetBrains Mono', 'Fira Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font);
+         font-size: 14px; min-height: 100vh; }
+
+  /* ── Header ── */
+  header {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 0 28px; height: 56px; display: flex; align-items: center;
+    justify-content: space-between; position: sticky; top: 0; z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 28px; height: 28px; background: var(--accent);
+               border-radius: 6px; display: flex; align-items: center;
+               justify-content: center; font-size: 16px; }
+  .logo-text { font-weight: 700; font-size: 16px; letter-spacing: -0.3px; }
+  .logo-sub  { color: var(--text2); font-size: 11px; font-weight: 400; margin-left: 4px; }
+  .header-right { display: flex; align-items: center; gap: 20px; }
+  .last-updated { color: var(--text2); font-size: 12px; font-family: var(--mono); }
+  .refresh-btn {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px;
+    transition: background .15s;
+  }
+  .refresh-btn:hover { background: var(--border); }
+  .alert-badge {
+    background: var(--critical); color: white; border-radius: 20px;
+    padding: 3px 10px; font-size: 12px; font-weight: 600; display: none;
+  }
+
+  /* ── Layout ── */
+  .main { display: grid; grid-template-columns: 1fr 360px; gap: 0;
+          min-height: calc(100vh - 56px); }
+  .left-col { padding: 24px 28px; border-right: 1px solid var(--border); overflow-y: auto; }
+  .right-col { padding: 24px 20px; overflow-y: auto; background: var(--bg2); }
+
+  /* ── Summary cards ── */
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+  .card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 20px; position: relative; overflow: hidden;
+  }
+  .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0;
+                  height: 3px; background: var(--card-color, var(--border)); }
+  .card.critical { --card-color: var(--critical); }
+  .card.high     { --card-color: var(--high); }
+  .card.moderate { --card-color: var(--moderate); }
+  .card.low      { --card-color: var(--low); }
+  .card-num  { font-size: 2.4em; font-weight: 700; line-height: 1; }
+  .card-label { color: var(--text2); font-size: 11px; text-transform: uppercase;
+                letter-spacing: 1px; margin-top: 4px; }
+  .card.critical .card-num { color: var(--critical); }
+  .card.high     .card-num { color: var(--high); }
+  .card.moderate .card-num { color: var(--moderate); }
+  .card.low      .card-num { color: var(--low); }
+
+  /* ── Section title ── */
+  .section-title {
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--text2); margin-bottom: 12px;
+  }
+
+  /* ── Sites table ── */
+  .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    background: var(--bg3); color: var(--text2); font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.8px; padding: 10px 14px;
+    text-align: left; cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  thead th:hover { color: var(--text); }
+  thead th.sorted { color: var(--accent); }
+  tbody tr { border-top: 1px solid var(--border); cursor: pointer; transition: background .1s; }
+  tbody tr:hover { background: var(--bg3); }
+  tbody tr.selected { background: rgba(88,166,255,.08); }
+  td { padding: 11px 14px; font-size: 13px; }
+  .site-name { font-weight: 500; font-family: var(--mono); font-size: 12px; }
+
+  /* ── Risk badge ── */
+  .badge {
+    display: inline-block; padding: 3px 9px; border-radius: 20px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.5px;
+  }
+  .badge.CRITICAL { background: rgba(248,81,73,.15); color: var(--critical); border: 1px solid rgba(248,81,73,.3); }
+  .badge.HIGH     { background: rgba(255,123,114,.15); color: var(--high); border: 1px solid rgba(255,123,114,.3); }
+  .badge.MODERATE { background: rgba(210,153,34,.15); color: var(--moderate); border: 1px solid rgba(210,153,34,.3); }
+  .badge.LOW      { background: rgba(63,185,80,.15); color: var(--low); border: 1px solid rgba(63,185,80,.3); }
+
+  /* ── Trend arrow ── */
+  .trend-up   { color: var(--critical); font-weight: 700; }
+  .trend-down { color: var(--low); font-weight: 700; }
+  .trend-flat { color: var(--text2); }
+
+  /* ── CUSUM bar ── */
+  .cusum-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .cusum-bar { height: 6px; border-radius: 3px; background: var(--bg3);
+               flex: 1; overflow: hidden; max-width: 60px; }
+  .cusum-fill { height: 100%; border-radius: 3px; background: var(--cusum); transition: width .3s; }
+  .cusum-val { font-family: var(--mono); font-size: 11px; color: var(--text2); min-width: 32px; }
+  .cusum-alert .cusum-fill { background: var(--critical); }
+  .cusum-alert .cusum-val  { color: var(--critical); font-weight: 700; }
+
+  /* ── Right col: alerts + detail panel ── */
+  .panel-title { font-size: 13px; font-weight: 600; margin-bottom: 14px;
+                 display: flex; align-items: center; gap: 8px; }
+  .panel-title .count { background: var(--bg3); border-radius: 20px;
+                        padding: 2px 8px; font-size: 11px; color: var(--text2); }
+
+  .alert-item {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px; margin-bottom: 10px; cursor: pointer; transition: border-color .15s;
+  }
+  .alert-item:hover { border-color: var(--accent); }
+  .alert-item.cusum-alert { border-left: 3px solid var(--cusum); }
+  .alert-item.HIGH     { border-left: 3px solid var(--high); }
+  .alert-item.CRITICAL { border-left: 3px solid var(--critical); }
+  .alert-name { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+  .alert-meta { color: var(--text2); font-size: 11px; margin-top: 4px; }
+  .alert-pathogens { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .pathogen-tag {
+    background: rgba(88,166,255,.1); border: 1px solid rgba(88,166,255,.2);
+    color: var(--accent); border-radius: 4px; padding: 2px 7px; font-size: 11px;
+  }
+
+  /* ── Detail panel ── */
+  .detail-panel { display: none; margin-top: 20px; }
+  .detail-panel.visible { display: block; }
+  .detail-site-name {
+    font-family: var(--mono); font-size: 14px; font-weight: 700;
+    margin-bottom: 16px; color: var(--accent);
+  }
+  .chart-box {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; margin-bottom: 14px;
+  }
+  .chart-label { font-size: 11px; color: var(--text2); text-transform: uppercase;
+                 letter-spacing: 0.8px; margin-bottom: 10px; font-weight: 600; }
+  .chart-canvas { width: 100% !important; height: 130px !important; }
+
+  .pathogen-list { margin-top: 14px; }
+  .pathogen-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; background: var(--bg3); border-radius: 6px; margin-bottom: 6px;
+  }
+  .pathogen-name { font-size: 12px; font-style: italic; }
+  .pathogen-disease { font-size: 11px; color: var(--text2); }
+  .pathogen-bar-wrap { width: 80px; }
+  .pathogen-bar { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+  .pathogen-bar-fill { height: 100%; border-radius: 3px; background: var(--high); }
+
+  /* ── Empty / loading states ── */
+  .empty { color: var(--text2); font-size: 13px; padding: 32px; text-align: center; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border);
+             border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Divider ── */
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🧬</div>
+    <span class="logo-text">PathogenIQ <span class="logo-sub">Biosurveillance</span></span>
+  </div>
+  <div class="header-right">
+    <span class="alert-badge" id="alert-badge">0 ALERTS</span>
+    <span class="last-updated" id="last-updated">Loading...</span>
+    <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
+  </div>
+</header>
+
+<div class="main">
+  <!-- ── Left column ── -->
+  <div class="left-col">
+    <!-- Summary cards -->
+    <div class="cards">
+      <div class="card critical"><div class="card-num" id="cnt-critical">—</div><div class="card-label">Critical</div></div>
+      <div class="card high">   <div class="card-num" id="cnt-high">—</div>    <div class="card-label">High</div></div>
+      <div class="card moderate"><div class="card-num" id="cnt-moderate">—</div><div class="card-label">Moderate</div></div>
+      <div class="card low">   <div class="card-num" id="cnt-low">—</div>      <div class="card-label">Low</div></div>
+    </div>
+
+    <!-- Sites table -->
+    <div class="section-title">Surveillance Sites</div>
+    <div class="table-wrap">
+      <table id="sites-table">
+        <thead>
+          <tr>
+            <th onclick="sortTable('name')">Site</th>
+            <th onclick="sortTable('level')">Risk Level</th>
+            <th onclick="sortTable('score')">Score ↕</th>
+            <th onclick="sortTable('z')">Z-Score</th>
+            <th onclick="sortTable('cusum')">CUSUM</th>
+            <th onclick="sortTable('trend')">Trend</th>
+            <th onclick="sortTable('forecast')">Forecast</th>
+            <th>Top Pathogen</th>
+          </tr>
+        </thead>
+        <tbody id="sites-tbody">
+          <tr><td colspan="8" class="empty"><span class="spinner"></span> Loading sites...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Right column ── -->
+  <div class="right-col">
+    <div class="panel-title">
+      Active Alerts <span class="count" id="alert-count">0</span>
+    </div>
+    <div id="alerts-list">
+      <div class="empty">Loading alerts...</div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Site detail panel -->
+    <div class="detail-panel" id="detail-panel">
+      <div class="detail-site-name" id="detail-site-name">—</div>
+
+      <div class="chart-box">
+        <div class="chart-label">Risk Score History</div>
+        <canvas id="score-chart" class="chart-canvas"></canvas>
+      </div>
+
+      <div class="chart-box">
+        <div class="chart-label">CUSUM — Changepoint Detection</div>
+        <canvas id="cusum-chart" class="chart-canvas"></canvas>
+      </div>
+
+      <div class="section-title" style="margin-top:14px">Top Pathogens</div>
+      <div id="detail-pathogens" class="pathogen-list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let _sites = [];
+let _sortKey = 'score';
+let _sortDir = -1;
+let _selectedSite = null;
+let _scoreChart = null;
+let _cusumChart = null;
+
+const LEVEL_ORDER = { CRITICAL: 0, HIGH: 1, MODERATE: 2, LOW: 3 };
+
+// ── Data loading ──────────────────────────────────────────────────────────────
+
+async function loadAll() {
+  await Promise.all([loadSummary(), loadSites(), loadAlerts()]);
+}
+
+async function loadSummary() {
+  try {
+    const d = await fetch(API + '/api/summary').then(r => r.json());
+    const s = d.summary || {};
+    document.getElementById('cnt-critical').textContent = s.critical ?? '—';
+    document.getElementById('cnt-high').textContent     = s.high ?? '—';
+    document.getElementById('cnt-moderate').textContent = s.moderate ?? '—';
+    document.getElementById('cnt-low').textContent      = s.low ?? '—';
+    const ts = d.generated_at ? new Date(d.generated_at).toLocaleString() : '—';
+    document.getElementById('last-updated').textContent = 'Updated: ' + ts;
+  } catch(e) { console.warn('summary error', e); }
+}
+
+async function loadSites() {
+  try {
+    const d = await fetch(API + '/api/sites').then(r => r.json());
+    _sites = d.sites || [];
+    renderTable();
+  } catch(e) {
+    document.getElementById('sites-tbody').innerHTML =
+      `<tr><td colspan="8" class="empty">Failed to load sites: ${e.message}</td></tr>`;
+  }
+}
+
+async function loadAlerts() {
+  try {
+    const d = await fetch(API + '/api/alerts').then(r => r.json());
+    const alerts = d.alerts || [];
+    const badge = document.getElementById('alert-badge');
+    document.getElementById('alert-count').textContent = alerts.length;
+    if (alerts.length > 0) {
+      badge.textContent = alerts.length + ' ALERT' + (alerts.length > 1 ? 'S' : '');
+      badge.style.display = 'inline';
+    } else {
+      badge.style.display = 'none';
+    }
+    renderAlerts(alerts);
+  } catch(e) { console.warn('alerts error', e); }
+}
+
+// ── Table rendering ───────────────────────────────────────────────────────────
+
+function sortTable(key) {
+  if (_sortKey === key) _sortDir *= -1;
+  else { _sortKey = key; _sortDir = -1; }
+  document.querySelectorAll('thead th').forEach(th => th.classList.remove('sorted'));
+  renderTable();
+}
+
+function _siteVal(s, key) {
+  const t = s.temporal || {};
+  switch(key) {
+    case 'name':     return s.name;
+    case 'level':    return LEVEL_ORDER[s.level] ?? 99;
+    case 'score':    return s.score ?? 0;
+    case 'z':        return t.z_score ?? 0;
+    case 'cusum':    return t.cusum ?? 0;
+    case 'trend':    return t.trend ?? 'stable';
+    case 'forecast': return t.forecast_next ?? 0;
+    default:         return 0;
+  }
+}
+
+function renderTable() {
+  const sorted = [..._sites].sort((a, b) => {
+    const av = _siteVal(a, _sortKey), bv = _siteVal(b, _sortKey);
+    if (typeof av === 'string') return _sortDir * av.localeCompare(bv);
+    return _sortDir * (bv - av);
+  });
+
+  const tbody = document.getElementById('sites-tbody');
+  if (!sorted.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No site data — run the pipeline first.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = sorted.map(s => {
+    const t = s.temporal || {};
+    const z = t.z_score != null ? (t.z_score >= 0 ? '+' : '') + t.z_score.toFixed(2) : '—';
+    const cusum = t.cusum != null ? t.cusum.toFixed(2) : '—';
+    const cusumAlert = t.cusum_alert;
+    const cusumPct = Math.min(100, (t.cusum ?? 0) / 8 * 100);
+    const trend = t.trend || 'stable';
+    const trendHtml = trend === 'increasing'
+      ? '<span class="trend-up">↑ rising</span>'
+      : trend === 'decreasing'
+      ? '<span class="trend-down">↓ falling</span>'
+      : '<span class="trend-flat">→ stable</span>';
+    const forecast = t.forecast_next != null ? t.forecast_next.toFixed(3) : '—';
+    const top = s.detected_pathogens?.[0]?.taxon ?? '—';
+    const isSelected = _selectedSite === s.name;
+
+    return `<tr onclick="selectSite('${s.name}')" class="${isSelected ? 'selected' : ''}">
+      <td class="site-name">${s.name}</td>
+      <td><span class="badge ${s.level}">${s.level}</span></td>
+      <td style="font-family:var(--mono);font-size:12px">${(s.score ?? 0).toFixed(3)}</td>
+      <td style="font-family:var(--mono);font-size:12px;color:${(t.z_score??0)>2?'var(--high)':'var(--text2)'}">${z}</td>
+      <td>
+        <div class="cusum-bar-wrap ${cusumAlert ? 'cusum-alert' : ''}">
+          <div class="cusum-bar"><div class="cusum-fill" style="width:${cusumPct}%"></div></div>
+          <span class="cusum-val">${cusum}</span>
+        </div>
+      </td>
+      <td>${trendHtml}</td>
+      <td style="font-family:var(--mono);font-size:12px;color:var(--text2)">${forecast}</td>
+      <td style="font-size:12px;font-style:italic;color:var(--text2);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${top}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Alert feed ────────────────────────────────────────────────────────────────
+
+function renderAlerts(alerts) {
+  const el = document.getElementById('alerts-list');
+  if (!alerts.length) {
+    el.innerHTML = '<div class="empty" style="padding:20px 0;text-align:left">✓ No active alerts</div>';
+    return;
+  }
+
+  el.innerHTML = alerts.map(s => {
+    const t = s.temporal || {};
+    const flags = [];
+    if (s.level === 'CRITICAL' || s.level === 'HIGH') flags.push(s.level);
+    if (t.cusum_alert) flags.push(`CUSUM ${t.cusum_signal?.toUpperCase() ?? ''}`);
+    if (t.baseline_anomaly) flags.push(`+${t.pct_above_baseline?.toFixed(0)}% baseline`);
+    if (t.trend === 'increasing' && t.trend_tau > 0.3) flags.push('TRENDING↑');
+
+    const pathogens = (s.detected_pathogens || []).slice(0, 3)
+      .map(p => `<span class="pathogen-tag">${p.taxon?.split(' ')[0]}</span>`)
+      .join('');
+
+    return `<div class="alert-item ${s.level}" onclick="selectSite('${s.name}')">
+      <div class="alert-name">${s.name}</div>
+      <div class="alert-meta">
+        Score: <strong>${(s.score??0).toFixed(3)}</strong>
+        &nbsp;·&nbsp; ${flags.map(f => `<span style="color:var(--high);font-weight:600">${f}</span>`).join(' · ')}
+      </div>
+      ${pathogens ? `<div class="alert-pathogens">${pathogens}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── Site detail ───────────────────────────────────────────────────────────────
+
+async function selectSite(name) {
+  _selectedSite = name;
+  renderTable();
+
+  const panel = document.getElementById('detail-panel');
+  panel.classList.add('visible');
+  document.getElementById('detail-site-name').textContent = name;
+
+  // Load history + pathogens in parallel
+  const [histResp, pathResp] = await Promise.all([
+    fetch(`${API}/api/site/${encodeURIComponent(name)}/history`).then(r => r.json()).catch(() => ({})),
+    fetch(`${API}/api/site/${encodeURIComponent(name)}/pathogens`).then(r => r.json()).catch(() => ({})),
+  ]);
+
+  const history = histResp.history || [];
+  const dates = history.map(h => h.run_date);
+  const scores = history.map(h => h.risk_score);
+
+  // ── Risk score chart ──
+  renderScoreChart(dates, scores);
+
+  // ── CUSUM chart ──
+  if (scores.length >= 2) {
+    const cusum = computeCUSUM(scores, 0.5);
+    renderCUSUMChart(dates, cusum, 4.0);
+  }
+
+  // ── Pathogens ──
+  renderPathogens(pathResp.pathogens || []);
+}
+
+// Client-side CUSUM computation
+function computeCUSUM(scores, k = 0.5) {
+  if (scores.length < 2) return [];
+  const half = Math.max(2, Math.floor(scores.length / 2));
+  const mu = scores.slice(0, half).reduce((a, b) => a + b, 0) / half;
+  const variance = scores.slice(0, half).reduce((s, v) => s + (v - mu) ** 2, 0) / (half - 1);
+  const sigma = Math.sqrt(variance) || 1;
+  const cusum = new Array(scores.length).fill(0);
+  for (let i = 1; i < scores.length; i++) {
+    const z = (scores[i] - mu) / sigma;
+    cusum[i] = Math.max(0, cusum[i - 1] + z - k);
+  }
+  return cusum;
+}
+
+function renderScoreChart(dates, scores) {
+  const ctx = document.getElementById('score-chart').getContext('2d');
+  if (_scoreChart) _scoreChart.destroy();
+  _scoreChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates.length ? dates : ['No data'],
+      datasets: [{
+        label: 'Risk Score',
+        data: scores,
+        borderColor: '#58a6ff',
+        backgroundColor: 'rgba(88,166,255,0.1)',
+        borderWidth: 2,
+        pointRadius: 4,
+        pointBackgroundColor: scores.map(s =>
+          s >= 0.8 ? '#f85149' : s >= 0.6 ? '#ff7b72' : s >= 0.3 ? '#d29922' : '#3fb950'
+        ),
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { color: '#21262d' } },
+        y: { min: 0, max: 1, ticks: { color: '#8b949e', font: { size: 10 } },
+             grid: { color: '#21262d' } }
+      },
+      annotation: { annotations: [
+        { type: 'line', yMin: 0.6, yMax: 0.6, borderColor: 'rgba(255,123,114,0.4)',
+          borderWidth: 1, borderDash: [4, 4] }
+      ]}
+    }
+  });
+}
+
+function renderCUSUMChart(dates, cusumVals, threshold) {
+  const ctx = document.getElementById('cusum-chart').getContext('2d');
+  if (_cusumChart) _cusumChart.destroy();
+  _cusumChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates.length ? dates : ['No data'],
+      datasets: [
+        {
+          label: 'CUSUM',
+          data: cusumVals,
+          borderColor: '#bc8cff',
+          backgroundColor: 'rgba(188,140,255,0.1)',
+          borderWidth: 2,
+          pointRadius: 3,
+          fill: true,
+          tension: 0.2,
+        },
+        {
+          label: `Alert threshold (h=${threshold})`,
+          data: new Array(cusumVals.length).fill(threshold),
+          borderColor: 'rgba(248,81,73,0.5)',
+          borderWidth: 1,
+          borderDash: [5, 5],
+          pointRadius: 0,
+          fill: false,
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { color: '#21262d' } },
+        y: { min: 0, ticks: { color: '#8b949e', font: { size: 10 } },
+             grid: { color: '#21262d' } }
+      }
+    }
+  });
+}
+
+function renderPathogens(pathogens) {
+  const el = document.getElementById('detail-pathogens');
+  if (!pathogens.length) { el.innerHTML = '<div style="color:var(--text2);font-size:12px">No pathogens detected above threshold.</div>'; return; }
+  const maxAbund = Math.max(...pathogens.map(p => p.abundance || 0), 0.001);
+  el.innerHTML = pathogens.slice(0, 6).map(p => {
+    const pct = Math.round((p.abundance / maxAbund) * 100);
+    const riskColor = p.risk_weight >= 0.8 ? 'var(--critical)' :
+                      p.risk_weight >= 0.6 ? 'var(--high)' :
+                      p.risk_weight >= 0.4 ? 'var(--moderate)' : 'var(--low)';
+    return `<div class="pathogen-row">
+      <div>
+        <div class="pathogen-name">${p.taxon}</div>
+        <div class="pathogen-disease">${p.disease}</div>
+      </div>
+      <div class="pathogen-bar-wrap">
+        <div class="pathogen-bar">
+          <div class="pathogen-bar-fill" style="width:${pct}%;background:${riskColor}"></div>
+        </div>
+        <div style="font-size:10px;color:var(--text2);text-align:right;margin-top:2px">${(p.abundance*100).toFixed(1)}%</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+loadAll();
+setInterval(loadAll, 60000); // auto-refresh every 60s
+</script>
+</body>
+</html>
