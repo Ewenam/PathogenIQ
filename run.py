@@ -54,7 +54,7 @@ ALERT_THRESHOLD = 0.6
 
 # Run ESMFold protein structure prediction + NCBI virulence annotation on flagged taxa?
 # Requires internet access. Adds ~30–60s per flagged pathogen.
-CHARACTERIZE = True
+CHARACTERIZE = False
 
 # Launch the dashboard automatically after the run? (opens http://localhost:8765)
 LAUNCH_DASHBOARD = True

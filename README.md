@@ -18,6 +18,55 @@ It was built for **wastewater-based epidemiology (WBE)** — the same methodolog
 
 ---
 
+## Installation
+
+**Requirements:** Python 3.11+. No GPU required. Internet access needed only for ESMFold characterization (optional).
+
+```bash
+git clone https://github.com/Ewenam/PathogenIQ.git
+cd PathogenIQ
+pip install -r requirements.txt
+pip install . --no-build-isolation
+```
+
+**Verify installation:**
+```bash
+pathogeniq benchmark
+# Expected: Sensitivity=1.00, Precision=1.00, F1=1.00
+```
+
+> **Note for GSU / HPC users:** The dashboard is fully self-contained — Chart.js and Leaflet.js are bundled inline so no external CDN requests are made. Works on restricted or firewalled networks.
+
+---
+
+## Quick Start — `run.py`
+
+The simplest way to run the full pipeline is `run.py` at the project root. Open it, fill in the paths at the top, and run it:
+
+```python
+# run.py — edit these lines:
+INPUT       = "/path/to/your/kraken_reports/"  # folder of .report files, or a counts.tsv
+OUTPUT_DIR  = "./reports"
+RANK        = "G"          # G = genus (default), S = species, F = family
+ALERT_THRESHOLD = 0.6      # 0–1, triggers HIGH alert
+CHARACTERIZE    = False    # True = run ESMFold on flagged pathogens (~30-60s each)
+LAUNCH_DASHBOARD = True    # opens http://localhost:8765 when done
+
+# Dashboard login
+DASH_USER = "admin"
+DASH_PASS = "pathogeniq"   # change this on shared servers
+DASH_AUTH = True
+```
+
+Then run:
+```bash
+python3 run.py
+```
+
+`run.py` auto-detects the virtual environment — no need to activate it first. Advanced graph/SBM parameters (Spearman threshold, min prevalence, etc.) are in `configs/default.yaml`.
+
+---
+
 ## Full Pipeline (8 Steps)
 
 ```
@@ -85,9 +134,10 @@ Kraken2 .report files  OR  taxa × samples count matrix (TSV/CSV)
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Step 7 · Characterization (optional)                           │
-│  For novel flagged pathogens: fetch protein sequences (NCBI)    │
-│  + ESMFold structure prediction + virulence annotation          │
+│  Step 7 · Characterization (optional, --characterize)           │
+│  For flagged pathogens: fetch protein sequences from NCBI       │
+│  → ESMFold 3D structure prediction (pLDDT confidence score)     │
+│  → virulence factor annotation (toxin/adhesin/secretion system) │
 └────────────────────────────┬────────────────────────────────────┘
                              │
                              ▼
@@ -162,51 +212,84 @@ All three signals appear in the JSON report, HTML report, and dashboard.
 
 ---
 
-## Installation
+## Novel Pathogen Characterization
 
-**Requirements:** Python 3.11+, internet access for ESMFold API (optional). No GPU required.
+When `--characterize` is enabled (or `CHARACTERIZE = True` in `run.py`), PathogenIQ runs a three-step characterization on every flagged HIGH/CRITICAL taxon:
 
+1. **NCBI protein fetch** — queries NCBI Protein DB for virulence-associated sequences for the taxon
+2. **ESMFold structure prediction** — sends sequences to Meta's ESMFold API (free, no GPU, ~30–60s per protein); returns a PDB-format 3D structure and a pLDDT confidence score (0–100, higher = better)
+3. **Virulence annotation** — scans protein titles against a curated keyword list (toxin, hemolysin, invasin, adhesin, protease, secretion system, etc.)
+
+**Risk tiers from characterization:**
+- **HIGH CONCERN** — pLDDT > 70 AND virulence keywords matched: high-confidence structure with known virulence factors
+- **MODERATE CONCERN** — virulence keywords matched but low structure confidence: recommend further sequencing
+- **MONITOR** — high-confidence structure but no virulence keywords: novel protein, further analysis needed
+- **LOW CONCERN** — no virulence markers and low structure confidence
+
+Run characterization on a specific taxon directly:
 ```bash
-git clone https://github.com/Ewenam/PathogenIQ.git
-cd PathogenIQ
-python3 -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pathogeniq characterize "Acinetobacter"
+pathogeniq characterize "Yersinia pestis"
+pathogeniq characterize Salmonella --no-fold   # NCBI lookup only, skip ESMFold
 ```
 
-**Verify installation:**
-```bash
-pathogeniq benchmark --quick
-# Expected: Sensitivity=1.00, Precision=1.00, F1=1.00
-```
+> **What this does NOT do:** This is not variant/mutation calling (SNPs, indels). That requires raw reads + a reference genome + a variant caller (e.g. GATK, iVar). PathogenIQ operates at the taxon abundance level. Characterization provides structural and functional context for flagged genera, not nucleotide-level variant analysis.
 
 ---
 
-## Running PathogenIQ
-
-### Run the pipeline
+## Web Dashboard
 
 ```bash
-# On a directory of Kraken2 .report files
+pathogeniq dashboard --report ./reports/report.json
+# → http://localhost:8765
+```
+
+Or use `run.py` with `LAUNCH_DASHBOARD = True` — it launches automatically after the pipeline finishes.
+
+**Login:** HTTP Basic Auth is enabled by default. Default credentials: `admin` / `pathogeniq`. Set via env vars or `run.py`:
+```bash
+export PATHOGENIQ_DASH_USER="admin"
+export PATHOGENIQ_DASH_PASS="your-password"
+export PATHOGENIQ_DASH_AUTH="false"   # disable auth entirely
+```
+
+**Dashboard features:**
+- **Summary cards** — Critical / High / Moderate / Low sample counts
+- **Surveillance map** — Leaflet.js map with risk-colored markers per site (requires `site_locations.json`)
+- **Sites table** — sortable by risk score, Z-score, CUSUM signal, trend, forecast; live search bar and risk level filter pills
+- **Keyboard navigation** — ↑/↓ to move between sites, Enter to select, Escape to close
+- **Alert feed** — HIGH/CRITICAL sites with top detected pathogens
+- **Site detail panel** — animated risk score meter, score history chart, CUSUM changepoint chart, pathogen breakdown
+- **Auto-refresh** every 60 seconds
+
+> **Offline / restricted networks:** Chart.js and Leaflet.js are bundled directly into `index.html` — no external requests are made. The dashboard works fully offline.
+
+### Setting up the map view
+
+Edit `pathogeniq/dashboard/site_locations.json` to map your sample names to GPS coordinates:
+
+```json
+{
+  "cleaned_SRR35556007_1": { "lat": 33.748, "lon": -84.387, "label": "Atlanta WWTP North" },
+  "cleaned_SRR35556008_1": { "lat": 33.755, "lon": -84.412, "label": "Atlanta WWTP South" }
+}
+```
+
+Keys must match the site names exactly as they appear in your Kraken2 report filenames. Sites without coordinates are still shown in the table — just not on the map.
+
+---
+
+## Running PathogenIQ (CLI)
+
+```bash
+# Basic run
 pathogeniq run ./kraken_reports/
 
-# On a pre-built taxa × samples count matrix (TSV)
-pathogeniq run counts.tsv
-
-# Species-level classification (default is genus G)
+# Species-level
 pathogeniq run ./kraken_reports/ --rank S
 
-# Custom output directory
-pathogeniq run ./kraken_reports/ --output ./reports
-
-# With automated email + Slack alerts
-pathogeniq run ./kraken_reports/ --alert-email --alert-slack
-
-# With ESMFold protein characterization of novel flagged pathogens
+# With ESMFold characterization of flagged pathogens
 pathogeniq run ./kraken_reports/ --characterize
-
-# With VQ-VAE sequence-level novelty detection (requires trained model)
-pathogeniq run ./kraken_reports/ --use-vqvae
 
 # Full options
 pathogeniq run ./kraken_reports/ \
@@ -216,168 +299,86 @@ pathogeniq run ./kraken_reports/ \
     --alert-email \
     --alert-slack \
     --characterize
-```
 
-### View a report summary in the terminal
-
-```bash
+# View a report summary
 pathogeniq summary reports/report.json
-```
 
-### Characterize a specific pathogen
+# Watch a directory for new data
+pathogeniq watch ./data --interval 3600 --alert-slack
 
-```bash
-pathogeniq characterize "Yersinia pestis"
-pathogeniq characterize Salmonella --no-fold   # NCBI lookup only, skip ESMFold
-```
-
-### Launch the web dashboard
-
-```bash
-pathogeniq dashboard
-# → http://localhost:8765
-```
-
-The dashboard shows:
-- Summary cards: Critical / High / Moderate / Low counts
-- Sortable sites table with Z-score, CUSUM signal bar, trend arrow (↑↓→), and forecast
-- Alert feed (HIGH/CRITICAL sites with top pathogen)
-- Click any site → risk score history chart + CUSUM chart + pathogen breakdown
-- Auto-refreshes every 60 seconds
-
-### Watch a directory for new data (automated scheduling)
-
-```bash
-# Check ./data every hour; run pipeline automatically on any new reports found
-pathogeniq watch ./data --interval 3600
-
-# With alerts and process existing data immediately on start
-pathogeniq watch ./data --interval 1800 --alert-email --alert-slack --run-on-start
-```
-
-Processed inputs are tracked in `.pathogeniq_processed.json` — the watcher never re-runs the same data.
-
-### Run the validation benchmark
-
-```bash
-pathogeniq benchmark                    # full pipeline, all 6 scenarios
-pathogeniq benchmark --quick            # skip SBM, faster (risk scoring only)
-pathogeniq benchmark --output bench.json
-```
-
-Runs 6 controlled synthetic scenarios (negative controls, low contamination, cholera outbreak, critical Yersinia, multi-pathogen community, novel agent) and reports sensitivity, specificity, precision, and F1.
-
-### Train the VQ-VAE sequence embedder (optional)
-
-```bash
-# Train on a FASTA file of reference genomes
-pathogeniq train-embedder reference_genomes.fasta --epochs 100
-
-# GPU-accelerated training (Apple Silicon or CUDA)
-pathogeniq train-embedder reference_genomes.fasta --epochs 200 --device mps
-
-# Then enable in pipeline
-pathogeniq run ./kraken_reports/ --use-vqvae
+# Validation benchmark
+pathogeniq benchmark
 ```
 
 ---
 
 ## Automated Alerts
 
-Configure via environment variables (no code changes needed):
+Configure via environment variables or `run.py`:
 
 ```bash
-# Slack
 export PATHOGENIQ_SLACK_WEBHOOK="https://hooks.slack.com/services/..."
-
-# Email (Gmail example — use an App Password, not your login password)
 export PATHOGENIQ_SMTP_USER="you@gmail.com"
 export PATHOGENIQ_SMTP_PASS="your-16-char-app-password"
 export PATHOGENIQ_ALERT_EMAILS="pi@gsu.edu,labdirector@gsu.edu"
 
-# Run with alerts enabled
 pathogeniq run ./kraken_reports/ --alert-email --alert-slack
 ```
 
-Or configure in `configs/default.yaml` under the `alerting:` section.
+Or set in `configs/default.yaml` under the `alerting:` section.
 
 ---
 
 ## Docker Deployment
 
 ```bash
-# Copy and fill in credentials
-cp .env.example .env
+cp .env.example .env   # fill in credentials
+docker compose up -d   # starts dashboard + automated watcher
 
-# Start dashboard + automated watcher (both services)
-docker compose up -d
-
-# Dashboard only
-docker compose up -d dashboard
-
-# View logs
-docker compose logs -f
+# Dashboard at http://your-server:8765
+# Drop Kraken2 reports into ./data/ — watcher picks them up hourly
 ```
-
-- Dashboard available at `http://your-server:8765`
-- Drop Kraken2 reports into `./data/` — the watcher picks them up automatically
-- Reports and history database persist across container restarts via named volumes
 
 ---
 
 ## Kraken2 Database
 
-PathogenIQ reads Kraken2 output but does not ship a reference database. You need a Kraken2 database installed separately.
+PathogenIQ reads Kraken2 output but does not ship a reference database.
 
-**For research and development (recommended):** The **MiniKraken2** database (~8 GB) works well. It covers all major bacterial and viral genera in the PathogenIQ pathogen database. Sensitivity is slightly reduced at very low abundances, but outbreak-level signals (which trigger HIGH/CRITICAL alerts) are reliably detected.
-
-**For production surveillance:** The **Standard** (~50 GB) or **PlusPF** (~80 GB, adds viruses + fungi + human) databases give maximum sensitivity.
+| Database | Size | Use case |
+|----------|------|----------|
+| MiniKraken2 | ~8 GB | Research / development — covers all major genera |
+| Standard | ~50 GB | Production surveillance |
+| PlusPF | ~80 GB | Maximum sensitivity (adds viruses, fungi, human) |
 
 ```bash
-# Download MiniKraken2 (8 GB)
 wget https://genome-idx.s3.amazonaws.com/kraken/minikraken2_v2_8GB_201904_UPDATE.tgz
 tar -xzf minikraken2_v2_8GB_201904_UPDATE.tgz
 
-# Set in configs/default.yaml
+# Set in configs/default.yaml:
 # kraken2:
 #   db_path: "/path/to/minikraken2_v2_8GB"
-
-# Run Kraken2 on a FASTQ file
-kraken2 --db /path/to/minikraken2_v2_8GB \
-        --report sample.report \
-        --classified-out sample_classified.fastq \
-        sample.fastq
-
-# Then run PathogenIQ on the resulting reports
-pathogeniq run ./reports_dir/
 ```
 
 ---
 
 ## Configuration
 
-Edit `configs/default.yaml` to tune the pipeline without changing code:
+Edit `configs/default.yaml` to tune the pipeline:
 
 ```yaml
 graph:
   spearman_threshold: 0.45   # Minimum |rho| for co-occurrence edge
   fdr_alpha: 0.05            # BH-FDR significance cutoff
+  min_prevalence: 0.1        # Min fraction of samples taxon must appear in
+  min_total_reads: 50        # Min summed reads across all samples
 
 sbm:
   max_k: 12                  # Maximum communities to try
   n_init: 10                 # EM random restarts
 
 risk:
-  alert_threshold: 0.6       # Score above which HIGH alert is raised
-
-alerting:
-  email:
-    enabled: false
-    smtp_host: smtp.gmail.com
-    to_addrs: []
-  slack:
-    enabled: false
-    webhook_url: ""
+  alert_threshold: 0.6       # Score above which HIGH alert fires
 
 vqvae:
   enabled: false
@@ -393,6 +394,7 @@ reporting:
 
 | Module | Description |
 |--------|-------------|
+| `run.py` | Simple config-at-the-top runner — edit INPUT/OUTPUT/params, then `python3 run.py` |
 | `ingestion/reader.py` | Parses Kraken2 `.report` files or TSV/CSV count matrices into a unified `SampleSet` |
 | `detection/kraken.py` | Kraken2 subprocess wrapper — runs classification on raw FASTQ files |
 | `community/graph.py` | FDR-corrected Spearman co-occurrence network builder |
@@ -404,14 +406,14 @@ reporting:
 | `temporal/cusum.py` | CUSUM changepoint detection (CDC/ECDC standard algorithm) |
 | `temporal/trend.py` | Mann-Kendall trend test + Holt's exponential smoothing forecast |
 | `characterization/alphafold.py` | NCBI protein fetch + ESMFold structure prediction + virulence annotation |
-| `embedding/tokenizer.py` | DNA k-mer (k=6) frequency vectorizer for sequence-level analysis |
-| `embedding/vqvae.py` | VQ-VAE model with EMA-updated codebook for sequence novelty detection |
-| `embedding/train.py` | VQ-VAE training script with validation and best-checkpoint saving |
+| `embedding/vqvae.py` | VQ-VAE model for sequence-level novelty detection |
+| `embedding/train.py` | VQ-VAE training script |
 | `alerting/dispatcher.py` | Unified alert dispatcher (email + Slack) |
 | `benchmark/runner.py` | Ground-truth benchmark suite with 6 synthetic scenarios |
 | `scheduler/watcher.py` | Directory poller for automated pipeline triggering |
-| `dashboard/app.py` | FastAPI dashboard server (port 8765) |
-| `dashboard/index.html` | Single-page Chart.js surveillance interface |
+| `dashboard/app.py` | FastAPI server — Basic Auth, map, sites, alerts, CUSUM, characterization APIs |
+| `dashboard/index.html` | Self-contained SPA — Chart.js + Leaflet.js bundled inline (no CDN) |
+| `dashboard/site_locations.json` | GPS coordinates for map view markers |
 | `reporting/report.py` | JSON + HTML report generation with temporal signals |
 | `pipeline/runner.py` | End-to-end orchestrator — runs all steps in sequence |
 
@@ -419,28 +421,21 @@ reporting:
 
 ## Server Deployment (Linux HPC)
 
-For deployment on a university or institutional server:
-
-**Port forwarding** — If port 8765 is firewalled, access the dashboard from your laptop with:
+**Port forwarding** — access the dashboard from your laptop:
 ```bash
 ssh -L 8765:localhost:8765 username@your-server.edu
-# Then open http://localhost:8765 in your browser
+# Then open http://localhost:8765
 ```
 
-**Singularity** — Many HPC clusters use Singularity instead of Docker (rootless containers). The Dockerfile is compatible:
-```bash
-singularity build pathogeniq.sif docker://ghcr.io/ewenam/pathogeniq:latest
-singularity exec pathogeniq.sif pathogeniq run ./data/
-```
-
-**PyTorch on Linux** — Unlike macOS + Python 3.13, Linux servers support PyTorch on all Python versions. VQ-VAE training and inference are available after:
-```bash
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-```
-
-**Persistent history** — The SQLite history database lives at `~/.pathogeniq/history.db` by default. On shared HPC systems, set a custom path to persistent storage:
+**Persistent history** — on shared HPC, point history DB to scratch storage:
 ```bash
 export PATHOGENIQ_DB=/scratch/your_project/pathogeniq.db
+```
+
+**VQ-VAE on Linux** — PyTorch available on all Python versions:
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pathogeniq train-embedder reference_genomes.fasta --epochs 100
 ```
 
 ---
@@ -450,7 +445,7 @@ export PATHOGENIQ_DB=/scratch/your_project/pathogeniq.db
 PathogenIQ was built on two prior research projects:
 
 1. **Genomic Sequence Detection** — VQ-VAE discrete representation learning for viral variant clustering in wastewater metagenomics
-2. **Probabilistic Graph-Based Sequence Reconstruction** — Stochastic Block Model co-occurrence network analysis of Kraken2-classified wastewater samples
+2. **Probabilistic Graph-Based Sequence Reconstruction** — Stochastic Block Model co-occurrence network analysis of Kraken2-classified wastewater samples (see [AAB Project](https://github.com/Ewenam/Probabilistic-Graph-Based-Sequence-Reconstruction))
 
 PathogenIQ unifies and productionizes both, fixing key methodological issues (SBM degeneracy from over-dense graphs, absence of FDR correction, no quantitative risk scoring) and adding temporal outbreak tracking, automated alerting, web dashboard, Docker deployment, and a validated benchmark suite.
 
