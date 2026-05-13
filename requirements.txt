@@ -10,7 +10,9 @@ matplotlib>=3.8
 seaborn>=0.13
 networkx>=3.2
 statsmodels>=0.14
-torch>=2.2
+# torch>=2.2  # required for VQ-VAE embedding; install separately per platform:
+#   pip install torch  (Linux / macOS Python ≤3.12)
+#   See https://pytorch.org/get-started for GPU / other platform wheels
 requests>=2.31
 tqdm>=4.66
 fastapi>=0.110

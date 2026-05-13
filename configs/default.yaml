@@ -16,10 +16,11 @@ sbm:
   max_iter: 300
 
 vqvae:
+  enabled: false            # set true to enable sequence-level novelty detection
   kmer_k: 6
   codebook_size: 512
   code_dim: 64
-  model_path: ""            # path to pretrained VQ-VAE checkpoint
+  model_path: ""            # path to trained checkpoint (run: pathogeniq train-embedder)
 
 novelty:
   anomaly_threshold: 2.5    # z-score above which a sample is flagged
@@ -31,6 +32,19 @@ alphafold:
   use_esmfold_api: true     # use ESMFold API (no local GPU required)
   esmfold_url: "https://api.esmatlas.com/foldSequence/v1/pdb/"
   local_model_path: ""      # path to local AlphaFold weights (optional)
+
+alerting:
+  email:
+    enabled: false
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    smtp_user: ""           # or set PATHOGENIQ_SMTP_USER env var
+    smtp_pass: ""           # or set PATHOGENIQ_SMTP_PASS env var
+    from_addr: ""
+    to_addrs: []            # or set PATHOGENIQ_ALERT_EMAILS env var (comma-separated)
+  slack:
+    enabled: false
+    webhook_url: ""         # or set PATHOGENIQ_SLACK_WEBHOOK env var
 
 reporting:
   output_dir: "./reports"

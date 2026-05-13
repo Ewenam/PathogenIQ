@@ -24,8 +24,15 @@ def cli():
               help="Risk score [0–1] above which an alert is raised.")
 @click.option("--characterize", is_flag=True, default=False,
               help="Run ESMFold structure prediction on flagged novel pathogens.")
+@click.option("--use-vqvae", is_flag=True, default=False,
+              help="Enable VQ-VAE sequence-level novelty detection (requires trained model).")
+@click.option("--alert-email", is_flag=True, default=False,
+              help="Send email alerts on HIGH/CRITICAL findings (requires PATHOGENIQ_SMTP_* env vars).")
+@click.option("--alert-slack", is_flag=True, default=False,
+              help="Send Slack alerts on HIGH/CRITICAL findings (requires PATHOGENIQ_SLACK_WEBHOOK).")
 @click.option("--quiet", is_flag=True, default=False, help="Suppress progress output.")
-def run(input_path, config, rank, output, alert_threshold, characterize, quiet):
+def run(input_path, config, rank, output, alert_threshold, characterize,
+        use_vqvae, alert_email, alert_slack, quiet):
     """
     Run the full PathogenIQ pipeline on Kraken2 reports or a count matrix.
 
@@ -44,6 +51,10 @@ def run(input_path, config, rank, output, alert_threshold, characterize, quiet):
         cfg.alert_threshold = alert_threshold
     else:
         cfg = PipelineConfig(output_dir=output, alert_threshold=alert_threshold)
+
+    cfg.use_vqvae = use_vqvae
+    cfg.alert_email = alert_email
+    cfg.alert_slack = alert_slack
 
     results = _run(
         input_path=input_path,
@@ -140,6 +151,59 @@ def summary(report_json):
             top,
         )
     console.print(table)
+
+
+@cli.command("train-embedder")
+@click.argument("fasta_path", type=click.Path(exists=True))
+@click.option("--output", "-o", default=None,
+              help="Checkpoint output path (default: ~/.pathogeniq/vqvae.pt).")
+@click.option("--epochs", default=50, show_default=True, help="Training epochs.")
+@click.option("--hidden-dim", default=256, show_default=True, help="Encoder hidden size.")
+@click.option("--latent-dim", default=64, show_default=True, help="Latent (codebook) dimension.")
+@click.option("--codebook-size", default=512, show_default=True, help="VQ codebook size.")
+@click.option("--batch-size", default=32, show_default=True, help="Mini-batch size.")
+@click.option("--lr", default=1e-3, show_default=True, help="Adam learning rate.")
+@click.option("--device", default="cpu", show_default=True,
+              type=click.Choice(["cpu", "cuda", "mps"]), help="Compute device.")
+@click.option("--quiet", is_flag=True, default=False, help="Suppress progress output.")
+def train_embedder(fasta_path, output, epochs, hidden_dim, latent_dim,
+                   codebook_size, batch_size, lr, device, quiet):
+    """
+    Train a VQ-VAE on reference genomic sequences for sequence-level novelty detection.
+
+    FASTA_PATH: FASTA file of reference genomes / assembled contigs.
+
+    The trained model learns a discrete codebook of normal sequence profiles.
+    At run time, sequences that diverge from the reference corpus yield high
+    reconstruction error, boosting the novelty signal.
+
+    Example:\n
+      pathogeniq train-embedder refseq_bacteria.fasta --epochs 100\n
+      pathogeniq train-embedder viral_refseq.fasta --device mps --codebook-size 1024
+    """
+    from pathogeniq.embedding.train import train, DEFAULT_OUTPUT
+    from pathlib import Path
+
+    out = Path(output) if output else DEFAULT_OUTPUT
+    click.echo(f"\nTraining VQ-VAE sequence embedder")
+    click.echo(f"  Input:    {fasta_path}")
+    click.echo(f"  Output:   {out}")
+    click.echo(f"  Epochs:   {epochs}  |  Codebook: {codebook_size}  |  Device: {device}\n")
+
+    train(
+        fasta_path=fasta_path,
+        output_path=out,
+        hidden_dim=hidden_dim,
+        latent_dim=latent_dim,
+        num_embeddings=codebook_size,
+        epochs=epochs,
+        batch_size=batch_size,
+        lr=lr,
+        device=device,
+        quiet=quiet,
+    )
+    click.echo(f"\nCheckpoint saved → {out}")
+    click.echo("Enable in pipeline: pathogeniq run ... --use-vqvae")
 
 
 @cli.command()

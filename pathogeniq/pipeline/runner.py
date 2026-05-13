@@ -43,11 +43,19 @@ class PipelineConfig:
     run_date: str = ""              # ISO date for this run (default: today)
     # Reporting
     output_dir: str = "./reports"
+    # Alerting
+    alert_email: bool = False       # send email alert on HIGH/CRITICAL
+    alert_slack: bool = False       # send Slack alert on HIGH/CRITICAL
+    # VQ-VAE sequence embedding
+    use_vqvae: bool = False         # enable sequence-level novelty detection
+    vqvae_model_path: str = ""      # path to trained .pt checkpoint
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "PipelineConfig":
         with open(path) as f:
             cfg = yaml.safe_load(f)
+        alerting = cfg.get("alerting", {})
+        vqvae = cfg.get("vqvae", {})
         return cls(
             spearman_threshold=cfg.get("graph", {}).get("spearman_threshold", 0.45),
             fdr_alpha=cfg.get("graph", {}).get("fdr_alpha", 0.05),
@@ -57,6 +65,10 @@ class PipelineConfig:
             sbm_n_init=cfg.get("sbm", {}).get("n_init", 10),
             alert_threshold=cfg.get("risk", {}).get("alert_threshold", 0.6),
             output_dir=cfg.get("reporting", {}).get("output_dir", "./reports"),
+            alert_email=alerting.get("email", {}).get("enabled", False),
+            alert_slack=alerting.get("slack", {}).get("enabled", False),
+            use_vqvae=vqvae.get("enabled", False),
+            vqvae_model_path=vqvae.get("model_path", ""),
         )
 
 
@@ -153,6 +165,58 @@ def run(
     for name, score in sorted(novelty_scores.items(), key=lambda x: -x[1]):
         if score > 0.5:
             console.print(f"  [yellow]Novelty flag:[/yellow] {name} (score={score:.3f})")
+
+    # ── Step 5.5: VQ-VAE sequence embedding (optional) ───────────────────────
+    vqvae_results: dict = {}
+    if cfg.use_vqvae:
+        console.rule("Step 5.5: VQ-VAE Sequence Embedding")
+        from ..embedding.embedder import score_sequences, load_model
+        from pathlib import Path as _P
+
+        model_path = _P(cfg.vqvae_model_path) if cfg.vqvae_model_path else None
+        if model_path is None:
+            from ..embedding.embedder import DEFAULT_MODEL_PATH
+            model_path = DEFAULT_MODEL_PATH
+
+        if not model_path.exists():
+            console.print(
+                f"  [yellow]VQ-VAE model not found at {model_path}[/yellow]\n"
+                "  Run [bold]pathogeniq train-embedder <reference.fasta>[/bold] first. Skipping."
+            )
+        else:
+            # Collect sequences from sampleset if available (requires raw FASTA input)
+            raw_seqs: dict[str, str] = getattr(sampleset, "raw_sequences", {}) or {}
+            if not raw_seqs:
+                console.print("  [dim]No raw sequences in sampleset — VQ-VAE skipped "
+                              "(provide FASTA input or populate sampleset.raw_sequences)[/dim]")
+            else:
+                console.print(f"  Scoring {len(raw_seqs)} sequences ...")
+                vqvae_results = score_sequences(raw_seqs, model_path=model_path)
+                # Blend VQ-VAE novelty into isolation-forest novelty scores (max fusion)
+                for taxon, emb in vqvae_results.items():
+                    if emb.is_novel:
+                        console.print(
+                            f"  [red]Novel sequence:[/red] {taxon} "
+                            f"(recon_loss={emb.reconstruction_loss:.4f}, "
+                            f"novelty={emb.novelty_score:.3f})"
+                        )
+                # Propagate to sample-level novelty scores by taking the max
+                for sample in sampleset.samples:
+                    rel_abund = sampleset.relative_abundance.get(sample.name)
+                    if rel_abund is None:
+                        continue
+                    seq_novelty = max(
+                        (vqvae_results[t].novelty_score
+                         for t in rel_abund[rel_abund > 0.01].index
+                         if t.split()[0] in vqvae_results or t in vqvae_results),
+                        default=0.0,
+                    )
+                    if seq_novelty > novelty_scores.get(sample.name, 0.0):
+                        novelty_scores[sample.name] = seq_novelty
+                        console.print(
+                            f"  [yellow]VQ-VAE elevated novelty:[/yellow] "
+                            f"{sample.name} → {seq_novelty:.3f}"
+                        )
 
     # ── Step 6: Risk scoring ──────────────────────────────────────────────────
     console.rule("Step 6: Risk Scoring")
@@ -259,6 +323,24 @@ def run(
     else:
         console.print("[green]No alerts — all samples within expected range[/green]")
 
+    # ── Step 9: Alert dispatch ────────────────────────────────────────────────
+    dispatch_results: dict = {}
+    if alerts and (cfg.alert_email or cfg.alert_slack):
+        console.rule("Step 9: Alert Dispatch")
+        from ..alerting.dispatcher import AlertConfig, dispatch_alerts
+
+        alert_cfg = AlertConfig.from_env()
+        alert_cfg.email_enabled = cfg.alert_email
+        alert_cfg.slack_enabled = cfg.alert_slack
+        dispatch_results = dispatch_alerts(
+            alerts, config=alert_cfg, run_date=cfg.run_date or ""
+        )
+    elif alerts:
+        console.print(
+            "  [dim]Alert dispatch disabled — set alert_email/alert_slack in config "
+            "or PATHOGENIQ_SMTP_USER / PATHOGENIQ_SLACK_WEBHOOK env vars[/dim]"
+        )
+
     return {
         "sampleset": sampleset,
         "sbm_result": sbm_result,
@@ -273,4 +355,6 @@ def run(
             "store": store,
         },
         "report_paths": {"json": str(json_path), "html": str(html_path)},
+        "vqvae": vqvae_results,
+        "dispatch": dispatch_results,
     }

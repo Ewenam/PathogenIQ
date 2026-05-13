@@ -66,16 +66,64 @@ PATHOGEN_DB: dict[str, dict] = {
     "Fusobacterium": {"risk_weight": 0.45, "category": "bacteria", "disease": "Oral/colon cancer"},
     "Bacteroides": {"risk_weight": 0.35, "category": "bacteria", "disease": "Anaerobic infections"},
 
-    # ── Viruses (detected via Kraken2 viral DB) ─────────────────────────────────
-    "Betacoronavirus": {"risk_weight": 0.90, "category": "virus", "disease": "COVID-19/SARS"},
-    "Orthomyxovirus": {"risk_weight": 0.85, "category": "virus", "disease": "Influenza"},
-    "Norovirus": {"risk_weight": 0.75, "category": "virus", "disease": "Gastroenteritis"},
-    "Rotavirus": {"risk_weight": 0.70, "category": "virus", "disease": "Childhood diarrhea"},
-    "Enterovirus": {"risk_weight": 0.70, "category": "virus", "disease": "Polio/Meningitis"},
+    # ── Viruses: Respiratory ────────────────────────────────────────────────────
+    # (Detected via Kraken2 viral DB; genus names match NCBI taxonomy)
+    "Betacoronavirus": {"risk_weight": 0.90, "category": "virus", "disease": "COVID-19/SARS/MERS"},
+    "Alphacoronavirus": {"risk_weight": 0.60, "category": "virus", "disease": "Common cold coronavirus"},
+    "Alphainfluenzavirus": {"risk_weight": 0.88, "category": "virus", "disease": "Influenza A (pandemic risk)"},
+    "Betainfluenzavirus": {"risk_weight": 0.80, "category": "virus", "disease": "Influenza B"},
+    "Gammainfluenzavirus": {"risk_weight": 0.65, "category": "virus", "disease": "Influenza C"},
+    "Orthomyxovirus": {"risk_weight": 0.85, "category": "virus", "disease": "Influenza (unclassified)"},
+    "Orthopneumovirus": {"risk_weight": 0.75, "category": "virus", "disease": "RSV (respiratory syncytial virus)"},
+    "Metapneumovirus": {"risk_weight": 0.65, "category": "virus", "disease": "Human metapneumovirus (hMPV)"},
+    "Respirovirus": {"risk_weight": 0.60, "category": "virus", "disease": "Parainfluenza 1/3"},
+    "Rubulavirus": {"risk_weight": 0.65, "category": "virus", "disease": "Mumps/Parainfluenza 2/4"},
+    "Morbillivirus": {"risk_weight": 0.80, "category": "virus", "disease": "Measles"},
+    "Mastadenovirus": {"risk_weight": 0.60, "category": "virus", "disease": "Human adenovirus (respiratory/GI)"},
     "Adenovirus": {"risk_weight": 0.60, "category": "virus", "disease": "Respiratory/GI"},
-    "Orthopoxvirus": {"risk_weight": 0.85, "category": "virus", "disease": "Mpox/Smallpox"},
-    "Flavivirus": {"risk_weight": 0.80, "category": "virus", "disease": "Dengue/Zika/WNV"},
-    "Alphavirus": {"risk_weight": 0.75, "category": "virus", "disease": "Chikungunya/EEE"},
+    "Rhinovirus": {"risk_weight": 0.45, "category": "virus", "disease": "Common cold"},
+
+    # ── Viruses: Gastrointestinal / Waterborne ──────────────────────────────────
+    "Norovirus": {"risk_weight": 0.75, "category": "virus", "disease": "Gastroenteritis (outbreaks)"},
+    "Rotavirus": {"risk_weight": 0.70, "category": "virus", "disease": "Childhood diarrhea"},
+    "Hepatovirus": {"risk_weight": 0.70, "category": "virus", "disease": "Hepatitis A (waterborne)"},
+    "Orthohepevirus": {"risk_weight": 0.65, "category": "virus", "disease": "Hepatitis E (waterborne/zoonotic)"},
+    "Sapovirus": {"risk_weight": 0.55, "category": "virus", "disease": "Sapovirus gastroenteritis"},
+    "Astrovirus": {"risk_weight": 0.50, "category": "virus", "disease": "Astrovirus gastroenteritis"},
+
+    # ── Viruses: Neurological / Systemic ───────────────────────────────────────
+    "Enterovirus": {"risk_weight": 0.70, "category": "virus", "disease": "Polio/Enterovirus D68/Meningitis"},
+    "Lyssavirus": {"risk_weight": 0.95, "category": "virus", "disease": "Rabies (near-universal fatality)"},
+    "Alphaherpesviridae": {"risk_weight": 0.55, "category": "virus", "disease": "HSV-1/2, VZV"},
+    "Simplexvirus": {"risk_weight": 0.55, "category": "virus", "disease": "Herpes simplex 1/2"},
+    "Varicellovirus": {"risk_weight": 0.60, "category": "virus", "disease": "Varicella-zoster (shingles)"},
+
+    # ── Viruses: Hemorrhagic Fever (BSL-3/4) ───────────────────────────────────
+    "Ebolavirus": {"risk_weight": 0.98, "category": "virus", "disease": "Ebola hemorrhagic fever"},
+    "Marburgvirus": {"risk_weight": 0.98, "category": "virus", "disease": "Marburg hemorrhagic fever"},
+    "Mammarenavirus": {"risk_weight": 0.90, "category": "virus", "disease": "Lassa/Machupo/Junin fever"},
+    "Orthonairovirus": {"risk_weight": 0.90, "category": "virus", "disease": "Crimean-Congo hemorrhagic fever"},
+    "Phlebovirus": {"risk_weight": 0.85, "category": "virus", "disease": "Rift Valley fever / SFTS"},
+    "Orthohantavirus": {"risk_weight": 0.85, "category": "virus", "disease": "Hantavirus pulmonary/HFRS"},
+    "Bandavirus": {"risk_weight": 0.80, "category": "virus", "disease": "SFTS / Heartland virus"},
+
+    # ── Viruses: Arboviral ──────────────────────────────────────────────────────
+    "Flavivirus": {"risk_weight": 0.80, "category": "virus", "disease": "Dengue/Zika/West Nile/Yellow Fever"},
+    "Alphavirus": {"risk_weight": 0.78, "category": "virus", "disease": "Chikungunya/EEE/WEE"},
+    "Orthobunyavirus": {"risk_weight": 0.70, "category": "virus", "disease": "La Crosse/Oropouche encephalitis"},
+
+    # ── Viruses: Poxviruses ─────────────────────────────────────────────────────
+    "Orthopoxvirus": {"risk_weight": 0.88, "category": "virus", "disease": "Mpox/Smallpox/Vaccinia"},
+
+    # ── Viruses: Bloodborne / Systemic ─────────────────────────────────────────
+    "Lentivirus": {"risk_weight": 0.80, "category": "virus", "disease": "HIV (wastewater surveillance)"},
+    "Orthohepadnavirus": {"risk_weight": 0.75, "category": "virus", "disease": "Hepatitis B"},
+    "Hepacivirus": {"risk_weight": 0.75, "category": "virus", "disease": "Hepatitis C"},
+    "Deltaretrovirus": {"risk_weight": 0.65, "category": "virus", "disease": "HTLV-1/2"},
+
+    # ── Viruses: Respiratory + other ───────────────────────────────────────────
+    "Bocaparvovirus": {"risk_weight": 0.50, "category": "virus", "disease": "HBoV respiratory illness"},
+    "Polyomavirus": {"risk_weight": 0.55, "category": "virus", "disease": "BK/JC virus (immunocompromised)"},
 
     # ── Fungi / parasites ───────────────────────────────────────────────────────
     "Candida": {"risk_weight": 0.65, "category": "fungi", "disease": "Candidiasis (drug-resistant)"},
