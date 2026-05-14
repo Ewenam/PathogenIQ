@@ -143,6 +143,7 @@ class RiskScore:
     novelty_signal: float               # 0–1 anomaly score
     breakdown: dict = field(default_factory=dict)
     amr_annotations: list[dict] = field(default_factory=list)
+    lineage_annotations: list[dict] = field(default_factory=list)
 
     def is_alert(self, threshold: float = 0.6) -> bool:
         return self.score >= threshold

@@ -22,7 +22,7 @@ def to_dict(risk_scores: list[RiskScore], meta: dict | None = None,
             cluster_data: dict | None = None,
             abundance_matrix: dict | None = None) -> dict:
     return {
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat().replace('+00:00', 'Z'),
         "metadata": meta or {},
         "summary": {
             "total_samples": len(risk_scores),
@@ -44,6 +44,7 @@ def to_dict(risk_scores: list[RiskScore], meta: dict | None = None,
                 "novelty_signal": round(r.novelty_signal, 4),
                 "breakdown": r.breakdown,
                 "amr_annotations": r.amr_annotations,
+                "lineage_annotations": r.lineage_annotations,
                 "temporal": {
                     "z_score": round(baselines[r.sample_name].z_score, 3) if baselines and r.sample_name in baselines else None,
                     "pct_above_baseline": baselines[r.sample_name].pct_above_baseline if baselines and r.sample_name in baselines else None,

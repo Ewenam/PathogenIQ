@@ -357,12 +357,28 @@ def run(
             if matching:
                 alerts.append(matching)
 
+    # ── Step 6.7: Species-level lineage context ───────────────────────────────
+    console.rule("Step 6.7: Lineage Context (species rank)")
+    from ..lineage.detector import load_species_from_report, lineage_annotations_to_dict
+    lineage_by_sample: dict[str, list[dict]] = {}
+    for sample in sampleset.samples:
+        if sample.kraken_report:
+            annotations = load_species_from_report(sample.kraken_report)
+            lineage_by_sample[sample.name] = lineage_annotations_to_dict(annotations)
+            if annotations:
+                top = annotations[0]
+                console.print(
+                    f"  {sample.name:<30s}  species: {top.species} "
+                    f"({top.abundance*100:.1f}%)"
+                )
+
     # ── Step 6.8: AMR annotation ──────────────────────────────────────────────
     console.rule("Step 6.8: AMR Annotation")
     from ..amr.annotator import annotate_amr, amr_annotations_to_dict
     for rs in risk_scores:
         amr = annotate_amr(rs.detected_pathogens)
         rs.amr_annotations = amr_annotations_to_dict(amr)
+        rs.lineage_annotations = lineage_by_sample.get(rs.sample_name, [])
         if amr:
             top = amr[0]
             console.print(

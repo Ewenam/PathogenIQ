@@ -99,7 +99,8 @@ class TimeSeriesStore:
         """
         Persist a completed pipeline run. Returns the run_id.
         """
-        now = datetime.utcnow()
+        from datetime import timezone
+        now = datetime.now(tz=timezone.utc)
         d = run_date or now.date().isoformat()
 
         with _tx(self.conn):

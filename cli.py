@@ -194,6 +194,51 @@ def benchmark(alert_threshold, quick, seed, output):
 
 
 @cli.command()
+@click.argument("report_path", type=click.Path(exists=True))
+@click.option("--threshold", default=0.001, show_default=True,
+              help="Minimum relative abundance to report (0–1).")
+def lineage(report_path, threshold):
+    """
+    Annotate species-level lineage context from a single Kraken2 report.
+
+    Parses the report at species rank and looks up known outbreak strains,
+    variants, and WHO priority context for any detected species.
+
+    Example:\n
+      pathogeniq lineage sample.report\n
+      pathogeniq lineage sample.report --threshold 0.005
+    """
+    from pathogeniq.lineage.detector import load_species_from_report
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+    annotations = load_species_from_report(report_path, threshold=threshold)
+
+    if not annotations:
+        console.print("[dim]No annotated species detected above threshold.[/dim]")
+        return
+
+    table = Table(title=f"Lineage Context: {report_path}", show_lines=True)
+    table.add_column("Species", style="cyan", max_width=45)
+    table.add_column("Abund%", justify="right")
+    table.add_column("WHO", justify="center")
+    table.add_column("Known Variants", max_width=40)
+    table.add_column("WBE Note", max_width=45)
+
+    for a in annotations:
+        variants = "; ".join(v["name"] for v in a.known_variants[:2])
+        table.add_row(
+            f"{a.species}\n[dim]{a.common_name}[/dim]",
+            f"{a.abundance*100:.2f}%",
+            a.who_label,
+            variants or "—",
+            a.wbe_utility[:80] or "—",
+        )
+    console.print(table)
+
+
+@cli.command()
 @click.argument("data_dir", type=click.Path(exists=True))
 @click.option("--output", "-o", default="./reports", show_default=True,
               help="Directory for pipeline output reports.")
