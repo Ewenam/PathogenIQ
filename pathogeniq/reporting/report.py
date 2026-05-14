@@ -43,6 +43,7 @@ def to_dict(risk_scores: list[RiskScore], meta: dict | None = None,
                 "community_signal": round(r.community_signal, 4),
                 "novelty_signal": round(r.novelty_signal, 4),
                 "breakdown": r.breakdown,
+                "amr_annotations": r.amr_annotations,
                 "temporal": {
                     "z_score": round(baselines[r.sample_name].z_score, 3) if baselines and r.sample_name in baselines else None,
                     "pct_above_baseline": baselines[r.sample_name].pct_above_baseline if baselines and r.sample_name in baselines else None,

@@ -228,6 +228,132 @@ app.get("/api/site/{site_name}/cusum_data")(
 )
 
 
+@app.get("/api/export/csv")
+async def export_csv():
+    """Download all samples as a flat CSV file."""
+    import csv, io
+    report = _latest_report()
+    samples = report.get("samples", [])
+    buf = io.StringIO()
+    fields = [
+        "name", "level", "score", "top_pathogen", "top_pathogen_abundance",
+        "amr_genera", "amr_who_priority", "novelty_signal", "community_signal",
+        "cusum_alert", "trend", "trend_tau", "baseline_anomaly", "generated_at",
+    ]
+    w = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+    w.writeheader()
+    generated_at = report.get("generated_at", "")
+    for s in samples:
+        top = s.get("detected_pathogens", [{}])[0] if s.get("detected_pathogens") else {}
+        amr = s.get("amr_annotations", [])
+        t = s.get("temporal", {})
+        w.writerow({
+            "name": s.get("name", ""),
+            "level": s.get("level", ""),
+            "score": s.get("score", ""),
+            "top_pathogen": top.get("taxon", ""),
+            "top_pathogen_abundance": round(top.get("abundance", 0), 4) if top else "",
+            "amr_genera": "; ".join(a["genus"] for a in amr),
+            "amr_who_priority": amr[0]["who_priority"] if amr else "",
+            "novelty_signal": s.get("novelty_signal", ""),
+            "community_signal": s.get("community_signal", ""),
+            "cusum_alert": t.get("cusum_alert", ""),
+            "trend": t.get("trend", ""),
+            "trend_tau": t.get("trend_tau", ""),
+            "baseline_anomaly": t.get("baseline_anomaly", ""),
+            "generated_at": generated_at,
+        })
+    csv_text = buf.getvalue()
+    return Response(
+        content=csv_text,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=pathogeniq_report.csv"},
+    )
+
+
+@app.get("/api/export/json")
+async def export_json():
+    """Download the full report JSON."""
+    report = _latest_report()
+    return Response(
+        content=json.dumps(report, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=pathogeniq_report.json"},
+    )
+
+
+@app.get("/api/diff")
+async def diff_samples(a: str, b: str):
+    """
+    Compare two samples: returns taxa that appeared, disappeared,
+    or changed significantly in relative abundance.
+    """
+    report = _latest_report()
+    samples = {s["name"]: s for s in report.get("samples", [])}
+    if a not in samples:
+        raise HTTPException(404, f"Sample '{a}' not found")
+    if b not in samples:
+        raise HTTPException(404, f"Sample '{b}' not found")
+
+    sa, sb = samples[a], samples[b]
+
+    abundance_matrix = report.get("abundance_matrix", {})
+    taxa = abundance_matrix.get("taxa", [])
+    sample_names = abundance_matrix.get("samples", [])
+    values = abundance_matrix.get("values", [])
+
+    def _abund_map(sample_name: str) -> dict[str, float]:
+        if sample_name not in sample_names:
+            return {}
+        idx = sample_names.index(sample_name)
+        return {taxa[i]: values[i][idx] for i in range(len(taxa))}
+
+    abund_a = _abund_map(a)
+    abund_b = _abund_map(b)
+    all_taxa = set(abund_a) | set(abund_b)
+
+    THRESHOLD = 0.005  # minimum absolute change to report
+    appeared, disappeared, changed = [], [], []
+
+    for taxon in sorted(all_taxa):
+        va = abund_a.get(taxon, 0.0)
+        vb = abund_b.get(taxon, 0.0)
+        delta = vb - va
+        if abs(delta) < THRESHOLD:
+            continue
+        entry = {"taxon": taxon, "abundance_a": round(va, 5), "abundance_b": round(vb, 5),
+                 "delta": round(delta, 5)}
+        if va == 0:
+            appeared.append(entry)
+        elif vb == 0:
+            disappeared.append(entry)
+        else:
+            changed.append(entry)
+
+    changed.sort(key=lambda x: abs(x["delta"]), reverse=True)
+    appeared.sort(key=lambda x: x["abundance_b"], reverse=True)
+    disappeared.sort(key=lambda x: x["abundance_a"], reverse=True)
+
+    return {
+        "sample_a": {"name": a, "score": sa.get("score"), "level": sa.get("level")},
+        "sample_b": {"name": b, "score": sb.get("score"), "level": sb.get("level")},
+        "appeared": appeared[:30],
+        "disappeared": disappeared[:30],
+        "changed": changed[:30],
+        "score_delta": round((sb.get("score", 0) or 0) - (sa.get("score", 0) or 0), 4),
+    }
+
+
+@app.get("/api/site/{site_name}/amr")
+async def site_amr(site_name: str):
+    """Return AMR annotations for a specific site from the latest report."""
+    report = _latest_report()
+    for s in report.get("samples", []):
+        if s["name"] == site_name:
+            return {"site": site_name, "amr_annotations": s.get("amr_annotations", [])}
+    raise HTTPException(404, f"Site '{site_name}' not found")
+
+
 if __name__ == "__main__":
     import uvicorn, sys
     db = sys.argv[1] if len(sys.argv) > 1 else str(DEFAULT_DB)

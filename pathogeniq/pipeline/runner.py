@@ -357,6 +357,20 @@ def run(
             if matching:
                 alerts.append(matching)
 
+    # ── Step 6.8: AMR annotation ──────────────────────────────────────────────
+    console.rule("Step 6.8: AMR Annotation")
+    from ..amr.annotator import annotate_amr, amr_annotations_to_dict
+    for rs in risk_scores:
+        amr = annotate_amr(rs.detected_pathogens)
+        rs.amr_annotations = amr_annotations_to_dict(amr)
+        if amr:
+            top = amr[0]
+            console.print(
+                f"  {rs.sample_name:<30s}  AMR: {top.genus} "
+                f"[{top.who_priority.upper()}] — "
+                f"{', '.join(r['drug_class'] for r in top.resistances[:2])}"
+            )
+
     # ── Step 7: Characterization (optional) ───────────────────────────────────
     characterization_results = {}
     if run_characterization and alerts:
