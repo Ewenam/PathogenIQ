@@ -1,0 +1,14 @@
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.pdf
+
+# Generated figures (recreated by generate_figures.py)
+figures/
+
+# Generated table numbers (recreated by generate_figures.py)
+table_results.tex

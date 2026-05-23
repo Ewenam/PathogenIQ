@@ -104,6 +104,30 @@ def _run_cmd(cmd, env=None):
         sys.exit(result.returncode)
 
 
+def _start_dashboard(report_json: Path, env_overrides: dict) -> "subprocess.Popen | None":
+    """Start the dashboard in the background and return the process handle."""
+    import time, webbrowser
+    subprocess.run(["pkill", "-f", "pathogeniq.*dashboard|uvicorn.*pathogeniq"],
+                   capture_output=True)
+    env = {
+        **os.environ,
+        **env_overrides,
+        "PATHOGENIQ_REPORT": str(report_json),
+        "PATHOGENIQ_DASH_USER": DASH_USER,
+        "PATHOGENIQ_DASH_PASS": DASH_PASS,
+        "PATHOGENIQ_DASH_AUTH": "true" if DASH_AUTH else "false",
+    }
+    proc = subprocess.Popen(
+        [str(PYTHON), str(PATHOGENIQ), "dashboard",
+         "--report", str(report_json),
+         "--port", str(DASHBOARD_PORT)],
+        env=env,
+    )
+    time.sleep(1.5)  # allow uvicorn to bind
+    webbrowser.open(f"http://localhost:{DASHBOARD_PORT}")
+    return proc
+
+
 def main():
     print("\n═══════════════════════════════════════════")
     print("  PathogenIQ Pipeline")
@@ -120,32 +144,38 @@ def main():
 
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
+    report_json = Path(OUTPUT_DIR) / "report.json"
+
+    env_overrides = {}
+    if SLACK_WEBHOOK:
+        env_overrides["PATHOGENIQ_SLACK_WEBHOOK"] = SLACK_WEBHOOK
+    if ALERT_EMAILS and SMTP_USER and SMTP_PASS:
+        env_overrides["PATHOGENIQ_SMTP_USER"] = SMTP_USER
+        env_overrides["PATHOGENIQ_SMTP_PASS"] = SMTP_PASS
+        env_overrides["PATHOGENIQ_ALERT_EMAILS"] = ALERT_EMAILS
+
+    dash_proc = None
+    if LAUNCH_DASHBOARD:
+        print(f"Starting dashboard → http://localhost:{DASHBOARD_PORT}")
+        print("  (Pipeline is running — refresh the page when it finishes)\n")
+        dash_proc = _start_dashboard(report_json, env_overrides)
+
     run_cmd = [
         str(PYTHON), str(PATHOGENIQ), "run", INPUT,
         "--rank", RANK,
         "--output", OUTPUT_DIR,
         "--alert-threshold", str(ALERT_THRESHOLD),
         *(["--characterize"] if CHARACTERIZE else []),
+        *(["--alert-slack"] if SLACK_WEBHOOK else []),
+        *(["--alert-email"] if (ALERT_EMAILS and SMTP_USER and SMTP_PASS) else []),
     ]
 
-    # Point at the project config so graph params are picked up
     config_path = Path(__file__).parent / "configs" / "default.yaml"
     if config_path.exists():
         run_cmd += ["--config", str(config_path)]
 
-    env_overrides = {}
-    if SLACK_WEBHOOK:
-        env_overrides["PATHOGENIQ_SLACK_WEBHOOK"] = SLACK_WEBHOOK
-        run_cmd.append("--alert-slack")
-    if ALERT_EMAILS and SMTP_USER and SMTP_PASS:
-        env_overrides["PATHOGENIQ_SMTP_USER"] = SMTP_USER
-        env_overrides["PATHOGENIQ_SMTP_PASS"] = SMTP_PASS
-        env_overrides["PATHOGENIQ_ALERT_EMAILS"] = ALERT_EMAILS
-        run_cmd.append("--alert-email")
-
     _run_cmd(run_cmd, env_overrides)
 
-    report_json = Path(OUTPUT_DIR) / "report.json"
     report_html = Path(OUTPUT_DIR) / "report.html"
     print(f"\nResults saved to: {OUTPUT_DIR}/")
     if report_json.exists():
@@ -153,21 +183,13 @@ def main():
     if report_html.exists():
         print(f"  HTML report: {report_html}")
 
-    if LAUNCH_DASHBOARD:
-        # Free the port if a previous dashboard is still running
-        subprocess.run(["pkill", "-f", f"pathogeniq.*dashboard|uvicorn.*pathogeniq"],
-                       capture_output=True)
-        print(f"\nLaunching dashboard → http://localhost:{DASHBOARD_PORT}")
+    if dash_proc is not None:
+        print(f"\nDashboard updated → http://localhost:{DASHBOARD_PORT}  (refresh to see results)")
         print("  Press Ctrl+C to stop.\n")
-        env_overrides["PATHOGENIQ_REPORT"] = str(report_json)
-        env_overrides["PATHOGENIQ_DASH_USER"] = DASH_USER
-        env_overrides["PATHOGENIQ_DASH_PASS"] = DASH_PASS
-        env_overrides["PATHOGENIQ_DASH_AUTH"] = "true" if DASH_AUTH else "false"
-        _run_cmd([
-            str(PYTHON), str(PATHOGENIQ), "dashboard",
-            "--report", str(report_json),
-            "--port", str(DASHBOARD_PORT),
-        ], env_overrides)
+        try:
+            dash_proc.wait()
+        except KeyboardInterrupt:
+            dash_proc.terminate()
 
 
 if __name__ == "__main__":
