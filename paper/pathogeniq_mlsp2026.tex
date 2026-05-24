@@ -65,21 +65,31 @@ wastewater epidemiology, pathogen risk scoring, ESMFold
 The COVID-19 pandemic underscored both the power and the limitations of
 genomic surveillance. Wastewater-based epidemiology (WBE) emerged as a
 scalable alternative to clinical testing, enabling detection of pathogen
-signals days to weeks before hospital admissions rise~\cite{Bibby2021,Wu2020}.
-However, current metagenomic analysis pipelines---typically Kraken2 with
-Bracken re-estimation~\cite{Wood2019,Lu2017}---produce raw taxonomic abundance
-tables with no mechanism for integrated risk stratification. Practitioners must
-manually inspect hundreds of taxa per sample, apply informal thresholds, and
-lack longitudinal outbreak detection. This workflow does not scale to routine
-surveillance of many sites.
+signals days to weeks before hospital admissions rise~\cite{Bibby2021,Wu2020,Peccia2020,Medema2020}.
+SARS-CoV-2 RNA concentrations in sewage were shown to track community
+prevalence with a 4–7 day lead over reported case counts~\cite{Daughton2020},
+and genome-resolved wastewater metagenomics has enabled detection of
+regionally prevalent variants~\cite{CritsChristoph2021}. Beyond COVID-19,
+large-scale wastewater metagenomics has been applied to global antimicrobial
+resistance (AMR) monitoring~\cite{Hendriksen2019} and broader pathogen
+surveillance~\cite{Quince2017}. However, current metagenomic analysis
+pipelines---typically Kraken2 with Bracken re-estimation~\cite{Wood2019,Lu2017}
+(see~\cite{Breitwieser2019} for a comprehensive review)---produce raw
+taxonomic abundance tables with no mechanism for integrated risk
+stratification. Practitioners must manually inspect hundreds of taxa per
+sample, apply informal thresholds, and lack longitudinal outbreak detection.
+This workflow does not scale to routine surveillance of many sites.
 
 Machine learning offers principled tools to address each limitation, yet
 prior work has addressed them in isolation. Deep learning has been applied
-to reference-free variant detection in sequencing reads~\cite{VQSeq2026},
-and statistical outbreak detection has a long history in public health
-signal processing~\cite{Farrington1996}. No unified, open-source system
-integrates these capabilities into a single, deployable pipeline operating
-on standard Kraken2 outputs.
+to metagenomic classification~\cite{Liang2020} and reference-free variant
+detection in sequencing reads~\cite{VQSeq2026}, and statistical outbreak
+detection has a long history in public health signal processing~\cite{Farrington1996,Unkel2012}.
+Anomaly detection methods~\cite{Chandola2009} have been applied to
+surveillance streams, but not combined with community-level pathogen
+co-occurrence signals. No unified, open-source system integrates these
+capabilities into a single, deployable pipeline operating on standard
+Kraken2 outputs.
 
 We present \textbf{PathogenIQ}, which makes the following contributions:
 \begin{itemize}
@@ -105,28 +115,41 @@ We present \textbf{PathogenIQ}, which makes the following contributions:
 \textbf{Wastewater surveillance pipelines.}
 Standard WBE pipelines (Freyja~\cite{Karthikeyan2022}, COJAC~\cite{Jahn2022})
 focus on SARS-CoV-2 variant deconvolution using curated mutation databases.
-These are reference-dependent and single-pathogen. PathogenIQ operates at the
-genus level across all taxa detected by Kraken2, making no assumption about
-which pathogens are present.
+These are reference-dependent and single-pathogen. Broader genomic
+surveillance of sewage~\cite{CritsChristoph2021,Ahmed2020} and global AMR
+monitoring~\cite{Hendriksen2019} demonstrate multi-pathogen potential, but
+lack quantitative ML-based risk scoring.
+PathogenIQ operates at the genus level across all taxa detected by Kraken2,
+making no assumption about which pathogens are present.
 
 \textbf{Outbreak detection in public health.}
 Page's CUSUM~\cite{Page1954} and the Farrington algorithm~\cite{Farrington1996}
 are the standard tools in national surveillance systems (CDC, ECDC).
+Unkel et al.~\cite{Unkel2012} provide a comprehensive review of prospective
+surveillance algorithms; most are designed for discrete case-count data
+rather than continuous ML-derived risk scores.
 PathogenIQ adapts the CUSUM framework to per-site risk scores derived from
-metagenomic data, enabling continuous outbreak monitoring rather than
-discrete case count monitoring.
+metagenomic data, enabling continuous outbreak monitoring without the
+assumption of Poisson-distributed case counts.
 
 \textbf{Community detection in microbial ecology.}
-Stochastic block models have been applied to microbiome co-occurrence
-networks~\cite{Kurtz2015, Faust2012}. PathogenIQ is, to our knowledge,
-the first system to use SBM community membership as a \emph{risk signal}
-in a pathogen surveillance scoring pipeline.
+The stochastic block model (SBM)~\cite{Holland1983,Karrer2011}, a
+generative model for random graphs with latent block structure, has been
+widely used for community detection in complex networks~\cite{Newman2006,Blondel2008}.
+In microbiology, Spearman-based co-occurrence networks~\cite{Barber2012}
+and compositionally robust inference~\cite{Kurtz2015} have characterized
+co-colonization patterns; Faust \& Raes~\cite{Faust2012} survey microbial
+interaction network models broadly.
+PathogenIQ is, to our knowledge, the first system to use SBM community
+membership as a \emph{risk signal} in a pathogen surveillance scoring
+pipeline.
 
 \textbf{Protein structure for pathogen characterization.}
-ESMFold~\cite{Lin2023} provides fast, accurate protein structure prediction.
-We use it to automatically assess the structural similarity of flagged
-novel taxa to known virulence proteins, a step previously requiring
-manual analysis by domain experts.
+AlphaFold~\cite{Jumper2021} and ESMFold~\cite{Lin2023} — the latter
+built atop the ESM protein language model~\cite{Rives2021} — enable
+fast, accurate protein structure prediction at scale.
+We use ESMFold to automatically assess the structural context of flagged
+novel taxa, a step previously requiring manual analysis by domain experts.
 
 % ── 3. Methods ────────────────────────────────────────────────────────────────
 \section{Methods}
@@ -159,7 +182,7 @@ We build a taxa co-occurrence graph $G = (V, E)$ where $V$ is the set of
 retained taxa. Edge weights are Spearman rank correlations $\rho_{ij}$
 between taxa $i$ and $j$ across samples.
 To control the false discovery rate from $\binom{T}{2}$ multiple tests,
-we apply Benjamini-Hochberg correction at $\alpha_{\text{FDR}}=0.05$.
+we apply Benjamini-Hochberg correction~\cite{Benjamini1995} at $\alpha_{\text{FDR}}=0.05$.
 An edge $(i,j)$ is retained only if the corrected $p$-value is significant
 and $\rho_{ij} \geq \rho_{\min} = 0.45$.
 The resulting sparse, biologically meaningful adjacency matrix $\mathbf{A}$
@@ -167,11 +190,12 @@ is passed to the SBM.
 
 \subsection{Stochastic Block Model Community Detection}
 
-We fit an SBM to $\mathbf{A}$ using variational EM with integrated
-classification likelihood (ICL) model selection. The model posits that
-taxon $i$ belongs to community $z_i \in \{1,\ldots,K\}$ with mixing
-proportion $\pi_k = P(z_i = k)$, and that edges are drawn independently
-given community assignments:
+We fit an SBM~\cite{Holland1983,Karrer2011} to $\mathbf{A}$ using
+variational EM with integrated classification likelihood (ICL) model
+selection~\cite{Peixoto2014}. The model posits that taxon $i$ belongs
+to community $z_i \in \{1,\ldots,K\}$ with mixing proportion
+$\pi_k = P(z_i = k)$, and that edges are drawn independently given
+community assignments:
 %
 \begin{equation}
 P(A_{ij} = 1 \mid z_i = k, z_j = l) = B_{kl}
@@ -181,8 +205,8 @@ where $\mathbf{B} \in [0,1]^{K \times K}$ is the block connection matrix.
 Soft assignments $q_{ik} = P(z_i = k \mid \mathbf{A})$ are updated via:
 %
 \begin{equation}
-\log q_{ik} \propto \log \pi_k + \sum_{j \neq i} \sum_l q_{jl}
-  \left[ A_{ij} \log B_{kl} + (1 - A_{ij}) \log(1 - B_{kl}) \right]
+\log q_{ik} \!\propto\! \log \pi_k + \!\sum_{j \neq i}\! \sum_l q_{jl}
+  \big[ A_{ij} \log B_{kl} + (1 \!-\! A_{ij}) \log(1 \!-\! B_{kl}) \big]
 \end{equation}
 %
 Model order $K$ is selected by maximizing the ICL score, which penalizes
@@ -212,9 +236,9 @@ $s_n^{(\text{comm})} = 1$ if the majority SBM community of sample $n$'s
 present taxa is pathogen-enriched, 0 otherwise.
 
 \textbf{Signal 3 — Novelty} $s_n^{(\text{nov})}$:
-An Isolation Forest~\cite{Liu2008} is fit on the filtered relative
-abundance matrix $\mathbf{X}$. The normalized anomaly score of sample
-$n$ is clipped to $[0,1]$.
+An Isolation Forest~\cite{Liu2008,Chandola2009} is fit on the filtered
+relative abundance matrix $\mathbf{X}$. The normalized anomaly score of
+sample $n$ is clipped to $[0,1]$.
 
 The composite score is:
 %
@@ -254,15 +278,15 @@ C_t = \max(0,\; C_{t-1} + z_t - k)
 where $k=0.5$ is the allowance parameter. An alert fires when $C_t \geq h$
 with decision threshold $h=4.0$ (standard epidemiological setting~\cite{Farrington1996}).
 
-\textbf{Trend analysis}: Mann-Kendall's $\tau$ statistic is computed over
-the window to detect monotonic trends. A Sen's slope estimate provides a
-one-step-ahead forecast.
+\textbf{Trend analysis}: Mann-Kendall's $\tau$ statistic~\cite{Mann1945,Kendall1975}
+is computed over the window to detect monotonic trends. Sen's slope
+estimator~\cite{Sen1968} provides a one-step-ahead forecast.
 
 \subsection{ESMFold Characterization}
 
 For each taxon flagged as HIGH or CRITICAL, PathogenIQ queries NCBI Protein
 for up to three protein sequences associated with the organism and submits
-them to the ESMFold API~\cite{Lin2023} for structure prediction. The predicted
+them to the ESMFold API~\cite{Lin2023,Rives2021} for structure prediction. The predicted
 structure's mean pLDDT confidence score and virulence keyword matching
 (against a curated 20-term list: toxins, invasins, adhesins, secretion
 systems, etc.) together produce a structured risk annotation, reported
@@ -336,8 +360,7 @@ Abundance-only             & \TODO{} & \TODO{} & \TODO{} & \TODO{} \\
 SBM-only                   & \TODO{} & \TODO{} & \TODO{} & \TODO{} \\
 \textbf{PathogenIQ (full)} & \textbf{\TODO{}} & \textbf{\TODO{}} & \textbf{\TODO{}} & \textbf{\TODO{}} \\
 \bottomrule
-\multicolumn{5}{l}{\footnotesize Run \texttt{python paper/generate\_figures.py --report reports/report.json}}\\
-\multicolumn{5}{l}{\footnotesize to populate this table from real data.}
+\multicolumn{5}{l}{\footnotesize \texttt{python paper/generate\_figures.py} populates this table.}
 \end{tabular}
 \end{table}
 
@@ -405,7 +428,7 @@ waiting for a single-point threshold exceedance.
 
 \subsection{Ablation: Signal Contribution}
 
-Table~\ref{tab:ablation} quantifies the marginal contribution of each
+Fig.~\ref{fig:ablation} quantifies the marginal contribution of each
 signal by removing one at a time. Removing the community signal causes
 the largest F1 drop (\TODO{$-$X.X\%}), confirming that SBM partitioning
 captures outbreak co-colonization patterns not encoded in individual
@@ -459,6 +482,7 @@ and surfaces temporal outbreak signals in a real-time dashboard.
 % ── References ────────────────────────────────────────────────────────────────
 \begin{thebibliography}{00}
 
+% ── Wastewater-based epidemiology ─────────────────────────────────────────────
 \bibitem{Bibby2021}
 K.~J. Bibby et al., ``Making waves: Plausible lead time for wastewater based
 epidemiology as an early warning system for COVID-19,''
@@ -467,20 +491,35 @@ epidemiology as an early warning system for COVID-19,''
 \bibitem{Wu2020}
 F.~Wu et al., ``SARS-CoV-2 titers in wastewater are higher than expected
 from clinically confirmed cases,''
-\textit{mSystems}, vol.~5, 2020.
+\textit{mSystems}, vol.~5, no.~4, 2020.
 
-\bibitem{Wood2019}
-D.~E. Wood, J.~Lu, and B.~Langmead, ``Improved metagenomic analysis with
-Kraken 2,'' \textit{Genome Biology}, vol.~20, p.~257, 2019.
+\bibitem{Peccia2020}
+J.~Peccia et al., ``Measurement of SARS-CoV-2 RNA in wastewater tracks
+community infection dynamics,''
+\textit{Nature Biotechnology}, vol.~38, pp.~1164--1167, 2020.
 
-\bibitem{Lu2017}
-J.~Lu et al., ``Bracken: Estimating species abundance in metagenomics data,''
-\textit{PeerJ Computer Science}, vol.~3, e104, 2017.
+\bibitem{Medema2020}
+G.~Medema et al., ``Presence of SARS-Coronavirus-2 RNA in sewage and
+correlation with reported COVID-19 prevalence in the early stage of the
+epidemic in The Netherlands,''
+\textit{Environmental Science \& Technology Letters}, vol.~7,
+pp.~511--516, 2020.
 
-\bibitem{VQSeq2026}
-Anonymous Authors, ``Reference-Free Variant Detection in Wastewater Genomic
-Surveillance via Masked Vector-Quantized Autoencoders,''
-\textit{Machine Learning for Healthcare}, 2026, under review.
+\bibitem{Daughton2020}
+C.~G. Daughton, ``Wastewater surveillance for population-wide COVID-19:
+The present and future,''
+\textit{Science of the Total Environment}, vol.~736, p.~139631, 2020.
+
+\bibitem{Ahmed2020}
+W.~Ahmed et al., ``First confirmed detection of SARS-CoV-2 in untreated
+wastewater in Australia: A proof of concept for the wastewater surveillance
+of COVID-19 in the community,''
+\textit{Science of the Total Environment}, vol.~728, p.~138764, 2020.
+
+\bibitem{CritsChristoph2021}
+A.~Crits-Christoph et al., ``Genome sequencing of sewage detects regionally
+prevalent SARS-CoV-2 variants,''
+\textit{mBio}, vol.~12, e02703-20, 2021.
 
 \bibitem{Karthikeyan2022}
 S.~Karthikeyan et al., ``Wastewater sequencing reveals early cryptic
@@ -491,14 +530,67 @@ K.~Jahn et al., ``Early detection and surveillance of SARS-CoV-2 genomic
 variants in wastewater using COJAC,'' \textit{Nature Microbiology},
 vol.~7, pp.~1785--1795, 2022.
 
-\bibitem{Farrington1996}
-C.~P. Farrington et al., ``A statistical algorithm for the early detection
-of outbreaks of infectious disease,'' \textit{J. Royal Statistical Society A},
-vol.~159, pp.~547--563, 1996.
+\bibitem{Hendriksen2019}
+R.~S. Hendriksen et al., ``Global monitoring of antimicrobial resistance
+based on metagenomics analyses of urban sewage,''
+\textit{Nature Communications}, vol.~10, p.~1124, 2019.
 
-\bibitem{Page1954}
-E.~S. Page, ``Continuous inspection schemes,''
-\textit{Biometrika}, vol.~41, pp.~100--115, 1954.
+% ── Metagenomics classifiers and methods ──────────────────────────────────────
+\bibitem{Wood2019}
+D.~E. Wood, J.~Lu, and B.~Langmead, ``Improved metagenomic analysis with
+Kraken 2,'' \textit{Genome Biology}, vol.~20, p.~257, 2019.
+
+\bibitem{Lu2017}
+J.~Lu et al., ``Bracken: Estimating species abundance in metagenomics data,''
+\textit{PeerJ Computer Science}, vol.~3, e104, 2017.
+
+\bibitem{Breitwieser2019}
+F.~P. Breitwieser, J.~Lu, and S.~L. Salzberg, ``A review of methods and
+databases for metagenomic classification and assembly,''
+\textit{Briefings in Bioinformatics}, vol.~20, pp.~1125--1136, 2019.
+
+\bibitem{Segata2012}
+N.~Segata et al., ``Metagenomic microbial community profiling using unique
+clade-specific marker genes,''
+\textit{Nature Methods}, vol.~9, pp.~811--814, 2012.
+
+\bibitem{Quince2017}
+C.~Quince et al., ``Shotgun metagenomics, from sampling to analysis,''
+\textit{Nature Biotechnology}, vol.~35, pp.~833--844, 2017.
+
+\bibitem{Sczyrba2017}
+A.~Sczyrba et al., ``Critical Assessment of Metagenome Interpretation---a
+benchmark of metagenomics software,''
+\textit{Nature Methods}, vol.~14, pp.~1063--1071, 2017.
+
+\bibitem{Liang2020}
+Q.~Liang et al., ``DeepMicrobes: taxonomic classification for metagenomics
+with deep learning,''
+\textit{NAR Genomics and Bioinformatics}, vol.~2, no.~1, lqaa009, 2020.
+
+% ── Community detection and network models ────────────────────────────────────
+\bibitem{Holland1983}
+P.~W. Holland, K.~B. Laskey, and S.~Leinhardt, ``Stochastic blockmodels:
+First steps,'' \textit{Social Networks}, vol.~5, pp.~109--137, 1983.
+
+\bibitem{Karrer2011}
+B.~Karrer and M.~E.~J. Newman, ``Stochastic blockmodels and community
+structure in networks,''
+\textit{Physical Review E}, vol.~83, p.~016107, 2011.
+
+\bibitem{Peixoto2014}
+T.~P. Peixoto, ``Efficient Monte Carlo and greedy heuristic for the
+inference of stochastic block models,''
+\textit{Physical Review E}, vol.~89, p.~012804, 2014.
+
+\bibitem{Newman2006}
+M.~E.~J. Newman, ``Modularity and community structure in networks,''
+\textit{Proceedings of the National Academy of Sciences}, vol.~103,
+pp.~8577--8582, 2006.
+
+\bibitem{Blondel2008}
+V.~D. Blondel et al., ``Fast unfolding of communities in large networks,''
+\textit{Journal of Statistical Mechanics}, p.~P10008, 2008.
 
 \bibitem{Kurtz2015}
 Z.~D. Kurtz et al., ``Sparse and compositionally robust inference of
@@ -509,13 +601,77 @@ vol.~11, e1004226, 2015.
 K.~Faust and J.~Raes, ``Microbial interactions: from networks to models,''
 \textit{Nature Reviews Microbiology}, vol.~10, pp.~538--550, 2012.
 
+\bibitem{Barber2012}
+A.~Barber\'{a}n et al., ``Using network analysis to explore co-occurrence
+patterns in soil microbial communities,''
+\textit{ISME Journal}, vol.~6, pp.~343--351, 2012.
+
+% ── Outbreak detection and surveillance ───────────────────────────────────────
+\bibitem{Page1954}
+E.~S. Page, ``Continuous inspection schemes,''
+\textit{Biometrika}, vol.~41, pp.~100--115, 1954.
+
+\bibitem{Farrington1996}
+C.~P. Farrington et al., ``A statistical algorithm for the early detection
+of outbreaks of infectious disease,'' \textit{Journal of the Royal Statistical
+Society, Series A}, vol.~159, pp.~547--563, 1996.
+
+\bibitem{Unkel2012}
+S.~Unkel et al., ``Statistical methods for the prospective detection of
+infectious disease outbreaks: a review,''
+\textit{Journal of the Royal Statistical Society, Series A}, vol.~175,
+pp.~49--82, 2012.
+
+% ── Statistical methods ───────────────────────────────────────────────────────
+\bibitem{Benjamini1995}
+Y.~Benjamini and Y.~Hochberg, ``Controlling the false discovery rate: a
+practical and powerful approach to multiple testing,''
+\textit{Journal of the Royal Statistical Society, Series B}, vol.~57,
+pp.~289--300, 1995.
+
+\bibitem{Mann1945}
+H.~B. Mann, ``Nonparametric tests against trend,''
+\textit{Econometrica}, vol.~13, pp.~245--259, 1945.
+
+\bibitem{Kendall1975}
+M.~G. Kendall, \textit{Rank Correlation Methods}, 4th ed.
+Charles Griffin, London, 1975.
+
+\bibitem{Sen1968}
+P.~K. Sen, ``Estimates of the regression coefficient based on Kendall's
+tau,'' \textit{Journal of the American Statistical Association}, vol.~63,
+pp.~1379--1389, 1968.
+
+% ── Protein structure prediction ──────────────────────────────────────────────
+\bibitem{Jumper2021}
+J.~Jumper et al., ``Highly accurate protein structure prediction with
+AlphaFold,'' \textit{Nature}, vol.~596, pp.~583--589, 2021.
+
 \bibitem{Lin2023}
 Z.~Lin et al., ``Evolutionary-scale prediction of atomic-level protein
-structure with a language model,'' \textit{Science}, vol.~379, pp.~1123--1130, 2023.
+structure with a language model,'' \textit{Science}, vol.~379,
+pp.~1123--1130, 2023.
 
+\bibitem{Rives2021}
+A.~Rives et al., ``Biological structure and function emerge from scaling
+unsupervised learning to 250 million protein sequences,''
+\textit{Proceedings of the National Academy of Sciences}, vol.~118,
+e2016239118, 2021.
+
+% ── Anomaly detection and machine learning ────────────────────────────────────
 \bibitem{Liu2008}
 F.~T. Liu, K.~M. Ting, and Z.-H. Zhou, ``Isolation forest,''
 in \textit{Proc. IEEE ICDM}, pp.~413--422, 2008.
+
+\bibitem{Chandola2009}
+V.~Chandola, A.~Banerjee, and V.~Kumar, ``Anomaly detection: A survey,''
+\textit{ACM Computing Surveys}, vol.~41, no.~3, article~15, 2009.
+
+% ── Related work (MaskedVQ-Seq) ───────────────────────────────────────────────
+\bibitem{VQSeq2026}
+Anonymous Authors, ``Reference-Free Variant Detection in Wastewater Genomic
+Surveillance via Masked Vector-Quantized Autoencoders,''
+\textit{Machine Learning for Healthcare}, 2026, under review.
 
 \end{thebibliography}
 
