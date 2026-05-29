@@ -46,14 +46,18 @@ weights, community context, and isolation-forest novelty detection;
 (3) CUSUM changepoint detection and Mann-Kendall trend analysis over a
 longitudinal history database for temporal outbreak signals; and (4)
 ESMFold protein structure prediction with NCBI virulence annotation for
-automated characterization of flagged novel taxa. On 27 public
-wastewater metagenomics samples, PathogenIQ identifies 21 HIGH-risk
-events dominated by ESKAPE pathogens with community co-occurrence
-signal active in 96.3\% of samples. On six synthetic benchmark
-scenarios ($N=66$ samples), PathogenIQ achieves sensitivity 100\%,
-specificity 100\%, and F1 1.000 with zero false positives across all
-22 clean synthetic samples, reducing false alert rates by 50 percentage
-points relative to na\"{i}ve abundance-threshold baselines.
+automated characterization of flagged novel taxa. On 27 public wastewater metagenomics samples, PathogenIQ identifies
+21 HIGH-risk events dominated by ESKAPE pathogens, with community
+co-occurrence signal active in 96.3\% of samples and CUSUM alerts
+raised on the SRR35939 series via accumulated sub-threshold signal.
+On six controlled synthetic benchmark scenarios ($N=66$ samples),
+the system achieves zero false positives across all 22 clean samples,
+reducing false alert rates by 50 percentage points over na\"{i}ve
+abundance-threshold approaches. The SBM community and isolation-forest
+novelty signals, which require adequate sample depth to form estimable
+co-occurrence structure, engage in 96.3\% and 100\% of real samples
+respectively, providing risk context that single-signal abundance
+scoring cannot capture at real sequencing depth.
 PathogenIQ is open-source and includes a real-time web dashboard for
 epidemiological situational awareness.
 \end{abstract}
@@ -411,13 +415,16 @@ Novel taxon intrusion    & — & — \\
 
 \begin{figure}[h]
   \centering
-  \includegraphics[width=\columnwidth]{figures/fig3_benchmark}
-  \caption{Per-scenario F1 on the synthetic benchmark across all four
-    methods ($N=66$ samples). PathogenIQ and Abundance-only both achieve
-    perfect F1 on high-signal scenarios; the SBM-only baseline degenerates
-    on small synthetic datasets due to insufficient co-occurrence graph density.
-    The community and novelty signal advantages are demonstrated on the
-    27-sample real wastewater run (Fig.~\ref{fig:risk_dist}).}
+  \includegraphics[width=\linewidth]{figures/fig3_benchmark}
+  \caption{\textbf{Left:} SBM co-occurrence network ($K=3$ communities,
+    59 taxa, edges with $|\rho|>0.6$, real wastewater data).
+    Node colour denotes community; key ESKAPE pathogens are labelled.
+    \textbf{Right:} Per-scenario F1 on the synthetic benchmark ($N=66$
+    samples). PathogenIQ and Abundance-only achieve equivalent F1 on
+    high-signal scenarios; the SBM-only baseline degenerates on small
+    synthetic datasets (sparse co-occurrence graphs), while community
+    signal engages in 96.3\% of the 27 real samples
+    (Fig.~\ref{fig:risk_dist}).}
   \label{fig:benchmark}
 \end{figure}
 

@@ -432,6 +432,138 @@ def fig3_benchmark(results: dict):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  FIGURE 3 (REAL) — SBM network graph + F1 bar chart (two-panel)
+# ══════════════════════════════════════════════════════════════════════════════
+
+PATHOGEN_LABELS = {
+    "Pseudomonas", "Aeromonas",            # Comm 0
+    "Acinetobacter", "Staphylococcus", "Klebsiella",  # Comm 1 ESKAPE
+    "Enterobacter", "Pantoea",             # Comm 2
+}
+
+COMM_COLORS = {0: "#2471a3", 1: "#e07b39", 2: "#27ae60"}
+COMM_LABELS = {
+    0: "Comm. 0 ($n$=30, Pseudomonas)",
+    1: "Comm. 1 ($n$=23, Acinetobacter)",
+    2: "Comm. 2 ($n$=6, Enterobacter)",
+}
+
+
+def fig3_network_benchmark(report_data: dict, results: dict):
+    """
+    Two-panel fig3:
+      Left  — real-data SBM co-occurrence network (|rho|>0.7, K=3 communities)
+      Right — synthetic benchmark F1 bar chart
+    Overwrites figures/fig3_benchmark.pdf.
+    """
+    try:
+        import networkx as nx
+    except ImportError:
+        print("  [fig3] networkx not installed — falling back to F1 chart only")
+        fig3_benchmark(results)
+        return
+
+    nodes = report_data["network"]["nodes"]
+    edges = report_data["network"]["edges"]
+
+    RHO_VIZ = 0.6  # visualization edge threshold
+
+    # Build filtered graph
+    G = nx.Graph()
+    for n in nodes:
+        G.add_node(n["id"], community=n["community"],
+                   mean_abundance=n.get("mean_abundance", 0.0))
+    for e in edges:
+        if abs(e["rho"]) > RHO_VIZ:
+            G.add_edge(e["source"], e["target"], rho=e["rho"])
+
+    # Keep only the largest connected component for a clean layout
+    largest_cc = max(nx.connected_components(G), key=len)
+    G = G.subgraph(largest_cc).copy()
+
+    pos = nx.spring_layout(G, seed=42, k=0.85 / max(len(G) ** 0.5, 1), iterations=200)
+
+    # ── Figure ────────────────────────────────────────────────────────────────
+    fig = plt.figure(figsize=(TWO_COL, 2.8))
+    gs = GridSpec(1, 2, figure=fig, width_ratios=[1.15, 1.0], wspace=0.08)
+
+    # ── Left: network ─────────────────────────────────────────────────────────
+    ax_net = fig.add_subplot(gs[0])
+
+    node_list = list(G.nodes())
+    node_colors = [COMM_COLORS.get(G.nodes[n]["community"], "#888") for n in node_list]
+    node_sizes  = [max(20, min(160, G.nodes[n]["mean_abundance"] * 4e5))
+                   for n in node_list]
+
+    pos_edges = [(u, v) for u, v, d in G.edges(data=True) if d["rho"] > 0]
+    neg_edges = [(u, v) for u, v, d in G.edges(data=True) if d["rho"] < 0]
+
+    nx.draw_networkx_edges(G, pos, edgelist=pos_edges, ax=ax_net,
+                           edge_color="#bbb", alpha=0.25, width=0.4)
+    nx.draw_networkx_edges(G, pos, edgelist=neg_edges, ax=ax_net,
+                           edge_color="#e74c3c", alpha=0.18, width=0.4,
+                           style="dashed")
+    nx.draw_networkx_nodes(G, pos, nodelist=node_list, ax=ax_net,
+                           node_color=node_colors, node_size=node_sizes,
+                           alpha=0.88, linewidths=0.4, edgecolors="white")
+
+    label_dict = {n: n for n in node_list if n in PATHOGEN_LABELS}
+    nx.draw_networkx_labels(G, pos, labels=label_dict, ax=ax_net,
+                            font_size=5.0, font_weight="bold",
+                            font_color="#111",
+                            bbox=dict(boxstyle="round,pad=0.12",
+                                      facecolor="white", alpha=0.75,
+                                      edgecolor="none"))
+
+    comm_patches = [mpatches.Patch(color=COMM_COLORS[k], label=COMM_LABELS[k],
+                                   alpha=0.88) for k in sorted(COMM_COLORS)]
+    ax_net.legend(handles=comm_patches, loc="lower left", fontsize=5.0,
+                  frameon=True, framealpha=0.9, edgecolor="#ccc",
+                  handlelength=0.9, handleheight=0.8, borderpad=0.5)
+
+    ax_net.set_title(
+        "SBM Co-occurrence Network\n"
+        r"($K=3$, $n=59$ taxa, $|\rho|>0.6$)",
+        fontsize=7.5)
+    ax_net.axis("off")
+
+    # ── Right: F1 bar chart ───────────────────────────────────────────────────
+    ax_bar = fig.add_subplot(gs[1])
+
+    methods   = ["Threshold", "Abundance-only", "SBM-only", "PathogenIQ"]
+    pal       = [COLORS["baseline1"], COLORS["baseline2"],
+                 COLORS["baseline3"], COLORS["pathogeniq"]]
+    scenarios = list(results.keys())
+    n_sc, n_m = len(scenarios), len(methods)
+    x = np.arange(n_sc)
+    width = 0.18
+
+    for mi, (method, color) in enumerate(zip(methods, pal)):
+        f1_vals = [results[sc][method].f1 or 0.0 for sc in scenarios]
+        offset = (mi - (n_m - 1) / 2) * width
+        ax_bar.bar(x + offset, f1_vals, width,
+                   color=color, alpha=0.85,
+                   label=method, edgecolor="white", linewidth=0.4)
+
+    ax_bar.set_xticks(x)
+    ax_bar.set_xticklabels([SCENARIO_LABELS.get(s, s) for s in scenarios],
+                            fontsize=5.5)
+    ax_bar.set_ylim(0, 1.3)
+    ax_bar.set_ylabel("F1 Score", fontsize=7)
+    ax_bar.set_title("Detection Performance\nvs. Baselines", fontsize=7.5)
+    ax_bar.legend(ncol=2, frameon=True, framealpha=0.9, edgecolor="#bbb",
+                  loc="upper right", fontsize=5.5,
+                  bbox_to_anchor=(1.02, 1.02))
+    ax_bar.grid(True, axis="y", zorder=0)
+    ax_bar.spines[["top", "right"]].set_visible(False)
+
+    fig.savefig(FIG_DIR / "fig3_benchmark.pdf")
+    fig.savefig(FIG_DIR / "fig3_benchmark.png")
+    plt.close(fig)
+    print("  fig3_benchmark.pdf ✓  (two-panel: SBM network + F1 chart)")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  FIGURE 4 — Risk score distribution by scenario
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -700,11 +832,13 @@ def write_latex_tables(results: dict, ablation_means: dict,
     for method in methods:
         s, sp, f1, far = _agg(method)
         bold = method == "PathogenIQ"
-        row = (f"{'\\textbf{' if bold else ''}{method}{'}' if bold else ''}"
-               f" & {'\\textbf{' if bold else ''}{s*100:.1f}\\%{'}' if bold else ''}"
-               f" & {'\\textbf{' if bold else ''}{sp*100:.1f}\\%{'}' if bold else ''}"
-               f" & {'\\textbf{' if bold else ''}{f1*100:.1f}\\%{'}' if bold else ''}"
-               f" & {'\\textbf{' if bold else ''}{far*100:.1f}\\%{'}' if bold else ''}"
+        b0 = "\\textbf{" if bold else ""
+        b1 = "}" if bold else ""
+        row = (f"{b0}{method}{b1}"
+               f" & {b0}{s*100:.1f}\\%{b1}"
+               f" & {b0}{sp*100:.1f}\\%{b1}"
+               f" & {b0}{f1*100:.1f}\\%{b1}"
+               f" & {b0}{far*100:.1f}\\%{b1}"
                r" \\")
         lines.append(row)
 
@@ -932,8 +1066,11 @@ def main():
     print("[3/6] Running benchmark (all scenarios × all methods) ...")
     results = run_benchmark_all(alert_threshold=args.threshold, seed=args.seed)
 
-    print("[4/6] Benchmark F1 bar chart ...")
-    fig3_benchmark(results)
+    print("[4/6] Benchmark F1 bar chart (+ SBM network if real data) ...")
+    if report_data:
+        fig3_network_benchmark(report_data, results)
+    else:
+        fig3_benchmark(results)
 
     print("[5/6] Risk score distribution ...")
     if report_data:
