@@ -679,17 +679,19 @@ def write_latex_tables(results: dict, ablation_means: dict,
     methods = ["Threshold", "Abundance-only", "SBM-only", "PathogenIQ"]
 
     def _agg(method):
-        f1s  = [results[sc][method].f1  or 0 for sc in results]
-        sens = [results[sc][method].sensitivity or 0 for sc in results
+        f1s  = [results[sc][method].f1 for sc in results
+                if results[sc][method].f1 is not None]
+        sens = [results[sc][method].sensitivity for sc in results
                 if results[sc][method].sensitivity is not None]
-        spec = [results[sc][method].specificity or 0 for sc in results
+        spec = [results[sc][method].specificity for sc in results
                 if results[sc][method].specificity is not None]
         far  = [results[sc][method].fp /
-                max(results[sc][method].n_samples, 1) for sc in results]
+                max(results[sc][method].n_samples, 1) for sc in results
+                if results[sc][method].fp > 0 or results[sc][method].tn > 0]
         return (np.mean(sens) if sens else 0,
                 np.mean(spec) if spec else 0,
-                np.mean(f1s),
-                np.mean(far))
+                np.mean(f1s) if f1s else 0,
+                np.mean(far) if far else 0)
 
     lines = []
     lines.append("% ── TABLE 1: Main detection results ────────────────────")
