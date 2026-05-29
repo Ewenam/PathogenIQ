@@ -460,13 +460,14 @@ at clinically significant abundances.
 \begin{figure}[h]
   \centering
   \includegraphics[width=\columnwidth]{figures/fig4_risk_dist}
-  \caption{Multi-signal risk breakdown for all 27 real wastewater
-    samples, sorted by total score. Stacked bars show the additive
-    contributions of abundance ($\alpha=0.50$, blue), community
-    ($\beta=0.25$, orange), and novelty ($\gamma=0.25$, green)
-    signals. Red dots show the final score, which may exceed the
-    stacked sum when the direct-detection pathway fires.
-    The alert threshold (0.6, dashed) is exceeded by 25 of 27 samples.}
+  \caption{Risk signal distributions across all 27 real wastewater
+    samples. Each violin shows the distribution of one signal's values
+    with individual sample points overlaid (jittered). Abundance and
+    community signals are bimodally distributed (0 or active), while
+    the novelty signal spans the full range, providing continuous
+    discriminative power. The composite score distribution (rightmost)
+    concentrates above the alert threshold (dashed), confirming that
+    the three signals combine to produce well-calibrated HIGH alerts.}
   \label{fig:risk_dist}
 \end{figure}
 

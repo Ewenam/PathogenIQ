@@ -826,44 +826,61 @@ def fig2_cusum_real(report_data: dict, series_key: str = "35939"):
 
 def fig4_risk_dist_real(report_data: dict, alert_threshold: float = 0.6):
     """
-    Stacked bar chart showing the three signal contributions
-    (abundance × α, community × β, novelty × γ) for each real sample,
-    sorted by total risk score.
+    Violin plots of each signal's distribution across all 27 real samples,
+    plus the composite risk score — one violin per signal type.
     """
-    samples = sorted(report_data["samples"], key=lambda s: s["score"])
-    names   = [s["name"].replace("cleaned_", "").replace("clean_", "") for s in samples]
-    # Shorten SRR IDs for display
-    short   = [n.replace("SRR", "")[-7:] if "SRR" in n else n[:12] for n in names]
-
+    samples = report_data["samples"]
     α, β, γ = 0.50, 0.25, 0.25
+
     breakdown = [s.get("breakdown", {}) for s in samples]
-    ab   = np.array([b.get("abundance_score", 0.0) * α for b in breakdown])
-    comm = np.array([b.get("community_signal", 0.0) * β for b in breakdown])
-    nov  = np.array([b.get("novelty_signal",   0.0) * γ for b in breakdown])
-    total = np.array([s["score"] for s in samples])
+    ab_vals   = [b.get("abundance_score",  0.0) for b in breakdown]
+    comm_vals = [b.get("community_signal", 0.0) for b in breakdown]
+    nov_vals  = [b.get("novelty_signal",   0.0) for b in breakdown]
+    total_vals = [s["score"] for s in samples]
 
-    x = np.arange(len(samples))
-    fig, ax = plt.subplots(figsize=(TWO_COL, 2.6))
+    groups = [
+        (ab_vals,    f"Abundance\n(α={α})",   "#2980b9"),
+        (comm_vals,  f"Community\n(β={β})",   "#e67e22"),
+        (nov_vals,   f"Novelty\n(γ={γ})",     "#27ae60"),
+        (total_vals, "Composite\nRisk Score", "#c0392b"),
+    ]
 
-    ax.bar(x, ab,   color="#2980b9", alpha=0.85, label=f"Abundance (α={α})",  width=0.7)
-    ax.bar(x, comm, bottom=ab, color="#e67e22", alpha=0.85,
-           label=f"Community (β={β})", width=0.7)
-    ax.bar(x, nov,  bottom=ab + comm, color="#27ae60", alpha=0.85,
-           label=f"Novelty (γ={γ})",   width=0.7)
+    fig, ax = plt.subplots(figsize=(TWO_COL, 2.5))
 
-    # Overlay actual score (may exceed sum if direct-detection path fires)
-    ax.scatter(x, total, color="#c0392b", s=12, zorder=5, label="Final score")
+    positions = np.arange(1, len(groups) + 1)
+    for pos, (data, label, color) in zip(positions, groups):
+        parts = ax.violinplot([data], positions=[pos],
+                              widths=0.55, showmedians=True,
+                              showextrema=True)
+        for pc in parts["bodies"]:
+            pc.set_facecolor(color)
+            pc.set_alpha(0.55)
+            pc.set_edgecolor(color)
+        for key in ["cmedians", "cmins", "cmaxes", "cbars"]:
+            if key in parts:
+                parts[key].set_color(color)
+                parts[key].set_linewidth(0.9)
+
+        # Jitter strip overlay so individual points are visible
+        rng = np.random.default_rng(pos)
+        jitter = rng.uniform(-0.1, 0.1, len(data))
+        ax.scatter(np.full(len(data), pos) + jitter, data,
+                   color=color, alpha=0.6, s=14, zorder=4)
+
+        ax.scatter([], [], color=color, alpha=0.7, s=30,
+                   label=label.replace("\n", " "), marker="s")
+
     ax.axhline(alert_threshold, color="#555", lw=0.9, ls="--",
                label=f"Alert threshold ({alert_threshold})")
 
-    ax.set_xticks(x)
-    ax.set_xticklabels(short, fontsize=5.2, rotation=45, ha="right")
-    ax.set_ylabel("Risk score contribution")
-    ax.set_ylim(0, 1.05)
+    ax.set_xticks(positions)
+    ax.set_xticklabels([g[1] for g in groups], fontsize=8)
+    ax.set_ylim(-0.05, 1.1)
+    ax.set_ylabel("Signal value")
     ax.set_title(
-        f"Multi-Signal Risk Breakdown: {len(samples)} Real Wastewater Samples",
+        f"Risk Signal Distributions: {len(samples)} Real Wastewater Samples",
         fontsize=8)
-    ax.legend(ncol=5, frameon=True, framealpha=0.9, edgecolor="#bbb",
+    ax.legend(ncol=3, frameon=True, framealpha=0.9, edgecolor="#bbb",
               loc="upper left", fontsize=6.5)
     ax.grid(True, axis="y", zorder=0, alpha=0.5)
     ax.spines[["top", "right"]].set_visible(False)
@@ -872,7 +889,7 @@ def fig4_risk_dist_real(report_data: dict, alert_threshold: float = 0.6):
     fig.savefig(FIG_DIR / "fig4_risk_dist.pdf")
     fig.savefig(FIG_DIR / "fig4_risk_dist.png")
     plt.close(fig)
-    print("  fig4_risk_dist.pdf  ✓  (real data — signal breakdown)")
+    print("  fig4_risk_dist.pdf  ✓  (real data — signal violin plots)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
