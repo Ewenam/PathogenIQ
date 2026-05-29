@@ -415,16 +415,18 @@ Novel taxon intrusion    & — & — \\
 
 \begin{figure}[h]
   \centering
-  \includegraphics[width=\linewidth]{figures/fig3_benchmark}
-  \caption{\textbf{Left:} SBM co-occurrence network ($K=3$ communities,
-    59 taxa, edges with $|\rho|>0.6$, real wastewater data).
-    Node colour denotes community; key ESKAPE pathogens are labelled.
-    \textbf{Right:} Per-scenario F1 on the synthetic benchmark ($N=66$
-    samples). PathogenIQ and Abundance-only achieve equivalent F1 on
-    high-signal scenarios; the SBM-only baseline degenerates on small
-    synthetic datasets (sparse co-occurrence graphs), while community
-    signal engages in 96.3\% of the 27 real samples
-    (Fig.~\ref{fig:risk_dist}).}
+  \includegraphics[width=\columnwidth]{figures/fig3_benchmark}
+  \caption{SBM-inferred co-occurrence network for 27 real wastewater
+    samples ($K=3$ communities, 59 taxa, edges with $|\rho|>0.6$,
+    largest connected component shown).
+    Node colour denotes SBM community; node size is proportional to
+    mean abundance. Solid grey edges indicate positive co-occurrence;
+    dashed red edges indicate negative co-occurrence.
+    Community 0 (blue, $n=30$) is Pseudomonas-dominated;
+    Community 1 (orange, $n=23$) groups Acinetobacter/Klebsiella ESKAPE taxa;
+    Community 2 (green, $n=6$) contains Enterobacter/Pantoea.
+    A sample whose dominant community is pathogen-enriched receives
+    $s^{(\text{comm})}=1$, active in 96.3\% of real samples.}
   \label{fig:benchmark}
 \end{figure}
 
