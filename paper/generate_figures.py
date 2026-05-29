@@ -493,19 +493,23 @@ def fig3_sbm_network(report_data: dict):
                            node_color=node_colors, node_size=node_sizes,
                            alpha=0.88, linewidths=0.5, edgecolors="white")
 
+    comm_patches = [mpatches.Patch(color=COMM_COLORS[k], label=COMM_LABELS[k],
+                                   alpha=0.88) for k in sorted(COMM_COLORS)]
+    pos_line = plt.Line2D([0], [0], color="#999", linewidth=0.8, label="Positive co-occ.")
+    neg_line = plt.Line2D([0], [0], color="#e74c3c", linewidth=0.8,
+                          linestyle="dashed", label="Negative co-occ.")
+    ax.legend(handles=comm_patches + [pos_line, neg_line],
+              loc="upper left", fontsize=4.5,
+              frameon=True, framealpha=0.85, edgecolor="#ccc",
+              handlelength=0.8, handleheight=0.7,
+              borderpad=0.4, labelspacing=0.3, handletextpad=0.4)
+
     ax.set_title(
         r"SBM Co-occurrence Network ($K=3$ communities, $|\rho|>0.6$, $n=59$ taxa)",
         fontsize=7.5)
     ax.axis("off")
 
-    fig.tight_layout(rect=[0, 0.10, 1, 1])
-    fig.text(0.5, 0.01,
-             "Comm. 0 (blue, $n$=30): Pseudomonas-dominated.  "
-             "Comm. 1 (orange, $n$=23): Acinetobacter/Klebsiella.  "
-             "Comm. 2 (green, $n$=6): Enterobacter/Pantoea.  "
-             "Node size $\\propto$ mean abundance.  "
-             "Solid grey = positive co-occ.; dashed red = negative co-occ.",
-             ha="center", va="bottom", fontsize=5.5, color="#555", style="italic")
+    fig.tight_layout()
     fig.savefig(FIG_DIR / "fig3_benchmark.pdf")
     fig.savefig(FIG_DIR / "fig3_benchmark.png")
     plt.close(fig)
