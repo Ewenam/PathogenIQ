@@ -839,10 +839,10 @@ def fig4_risk_dist_real(report_data: dict, alert_threshold: float = 0.6):
     total_vals = [s["score"] for s in samples]
 
     groups = [
-        (ab_vals,    f"Abundance\n(α={α})",   "#2980b9"),
-        (comm_vals,  f"Community\n(β={β})",   "#e67e22"),
-        (nov_vals,   f"Novelty\n(γ={γ})",     "#27ae60"),
-        (total_vals, "Composite\nRisk Score", "#c0392b"),
+        (ab_vals,    "Abundance\n(α=0.50)",   "#2980b9"),
+        (comm_vals,  "Community\n(β=0.25)",   "#e67e22"),
+        (nov_vals,   "Novelty\n(γ=0.25)",     "#27ae60"),
+        (total_vals, "Composite\nScore",      "#c0392b"),
     ]
 
     fig, ax = plt.subplots(figsize=(TWO_COL, 2.5))
@@ -867,23 +867,26 @@ def fig4_risk_dist_real(report_data: dict, alert_threshold: float = 0.6):
         ax.scatter(np.full(len(data), pos) + jitter, data,
                    color=color, alpha=0.6, s=14, zorder=4)
 
-        ax.scatter([], [], color=color, alpha=0.7, s=30,
-                   label=label.replace("\n", " "), marker="s")
-
-    ax.axhline(alert_threshold, color="#555", lw=0.9, ls="--",
-               label=f"Alert threshold ({alert_threshold})")
+    ax.axhline(alert_threshold, color="#555", lw=0.9, ls="--")
+    ax.text(4.42, alert_threshold + 0.03, f"θ={alert_threshold}",
+            fontsize=6.5, color="#555", va="bottom")
 
     ax.set_xticks(positions)
-    ax.set_xticklabels([g[1] for g in groups], fontsize=8)
+    ax.set_xticklabels([g[1] for g in groups], fontsize=7.5)
     ax.set_ylim(-0.05, 1.1)
     ax.set_ylabel("Signal value")
     ax.set_title(
-        f"Risk Signal Distributions: {len(samples)} Real Wastewater Samples",
+        f"Risk Signal Distributions — {len(samples)} Real Wastewater Samples",
         fontsize=8)
-    ax.legend(ncol=3, frameon=True, framealpha=0.9, edgecolor="#bbb",
-              loc="upper left", fontsize=6.5)
     ax.grid(True, axis="y", zorder=0, alpha=0.5)
     ax.spines[["top", "right"]].set_visible(False)
+
+    # Footnote annotation instead of legend
+    fig.text(0.5, -0.01,
+             "Horizontal line: alert threshold (θ=0.6).  "
+             "Median shown as white bar.  $n=27$ samples per violin.",
+             ha="center", va="top", fontsize=6, color="#555",
+             style="italic")
 
     fig.tight_layout()
     fig.savefig(FIG_DIR / "fig4_risk_dist.pdf")
