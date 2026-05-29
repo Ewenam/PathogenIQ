@@ -493,23 +493,19 @@ def fig3_sbm_network(report_data: dict):
                            node_color=node_colors, node_size=node_sizes,
                            alpha=0.88, linewidths=0.5, edgecolors="white")
 
-    comm_patches = [mpatches.Patch(color=COMM_COLORS[k], label=COMM_LABELS[k],
-                                   alpha=0.88) for k in sorted(COMM_COLORS)]
-    # Edge-type legend entries
-    pos_line = plt.Line2D([0], [0], color="#999", linewidth=0.9, label="Positive co-occ.")
-    neg_line = plt.Line2D([0], [0], color="#e74c3c", linewidth=0.9,
-                          linestyle="dashed", label="Negative co-occ.")
-    ax.legend(handles=comm_patches + [pos_line, neg_line],
-              loc="upper right", fontsize=5.5,
-              frameon=True, framealpha=0.92, edgecolor="#ccc",
-              handlelength=1.1, handleheight=0.9, borderpad=0.6)
-
     ax.set_title(
         r"SBM Co-occurrence Network ($K=3$ communities, $|\rho|>0.6$, $n=59$ taxa)",
         fontsize=7.5)
     ax.axis("off")
 
-    fig.tight_layout()
+    fig.tight_layout(rect=[0, 0.10, 1, 1])
+    fig.text(0.5, 0.01,
+             "Comm. 0 (blue, $n$=30): Pseudomonas-dominated.  "
+             "Comm. 1 (orange, $n$=23): Acinetobacter/Klebsiella.  "
+             "Comm. 2 (green, $n$=6): Enterobacter/Pantoea.  "
+             "Node size $\\propto$ mean abundance.  "
+             "Solid grey = positive co-occ.; dashed red = negative co-occ.",
+             ha="center", va="bottom", fontsize=5.5, color="#555", style="italic")
     fig.savefig(FIG_DIR / "fig3_benchmark.pdf")
     fig.savefig(FIG_DIR / "fig3_benchmark.png")
     plt.close(fig)
@@ -867,14 +863,12 @@ def fig2_cusum_real(report_data: dict, series_key: str = "35939"):
     # ── top: risk score ───────────────────────────────────────────────────────
     ax = axes[0]
     ax.bar(x, scores, color=COLORS["score"], alpha=0.75, width=0.6)
-    ax.axhline(0.60, color=COLORS["threshold"], lw=0.9, ls="--",
-               label="Alert threshold (0.6)")
+    ax.axhline(0.60, color=COLORS["threshold"], lw=0.9, ls="--")
     for i, (a, sc) in enumerate(zip(alerts, scores)):
         if a:
             ax.bar(x[i], sc, color=COLORS["alert"], alpha=0.9, width=0.6)
     ax.set_ylim(0, 1.0)
     ax.set_ylabel("Risk score")
-    ax.legend(loc="upper right", frameon=True, framealpha=0.9, fontsize=7)
     ax.grid(True, axis="y", zorder=0)
     ax.set_title("CUSUM Early Warning: SRR35939 Wastewater Series (Real Data)",
                  fontsize=7.5)
@@ -883,12 +877,11 @@ def fig2_cusum_real(report_data: dict, series_key: str = "35939"):
     # ── bottom: CUSUM statistic ───────────────────────────────────────────────
     ax = axes[1]
     ax.bar(x, cusums, color=COLORS["cusum"], alpha=0.75, width=0.6)
-    ax.axhline(h, color=COLORS["alert"], lw=0.9, ls="--",
-               label=f"Decision boundary ($h={h:.0f}$)")
+    ax.axhline(h, color=COLORS["alert"], lw=0.9, ls="--")
     alert_idx = [i for i, a in enumerate(alerts) if a]
     if alert_idx:
         ax.bar([x[i] for i in alert_idx], [cusums[i] for i in alert_idx],
-               color=COLORS["alert"], alpha=0.9, width=0.6, label="CUSUM alert")
+               color=COLORS["alert"], alpha=0.9, width=0.6)
         ax.scatter([x[i] for i in alert_idx], [cusums[i] for i in alert_idx],
                    color=COLORS["alert"], s=28, zorder=5)
     ax.set_ylim(0, max(cusums.max() * 1.3, h * 1.5))
@@ -896,11 +889,14 @@ def fig2_cusum_real(report_data: dict, series_key: str = "35939"):
     ax.set_xticks(x)
     ax.set_xticklabels(run_ids, fontsize=6.5, rotation=20, ha="right")
     ax.set_xlabel("Sample (run order)")
-    ax.legend(loc="upper right", frameon=True, framealpha=0.9, fontsize=7)
     ax.grid(True, axis="y", zorder=0)
     ax.spines[["top", "right"]].set_visible(False)
 
-    fig.tight_layout()
+    fig.subplots_adjust(bottom=0.30, top=0.91, hspace=0.12)
+    fig.text(0.5, 0.02,
+             "Blue bars: sub-threshold risk score; red bars: CUSUM alert fired ($C_t \\geq h$).  "
+             "Dashed red line: alert threshold (top, $\\theta=0.6$) / decision boundary (bottom, $h=4$).",
+             ha="center", va="bottom", fontsize=5.5, color="#555", style="italic")
     fig.savefig(FIG_DIR / "fig2_cusum.pdf")
     fig.savefig(FIG_DIR / "fig2_cusum.png")
     plt.close(fig)
