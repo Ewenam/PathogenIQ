@@ -341,6 +341,7 @@ runs by which PathogenIQ flags a site before the baseline threshold method.
 
 % ── 5. Results ────────────────────────────────────────────────────────────────
 \section{Results}
+\label{sec:results}
 
 \subsection{Detection Performance}
 
@@ -411,10 +412,12 @@ Novel taxon intrusion    & — & — \\
 \begin{figure}[h]
   \centering
   \includegraphics[width=\columnwidth]{figures/fig3_benchmark}
-  \caption{Per-scenario F1 on the synthetic benchmark across all four methods.
-    PathogenIQ and Abundance-only both achieve perfect F1 on high-signal
-    scenarios; the advantage of community and novelty signals becomes
-    apparent on real multi-site data (Table~\ref{tab:main}).}
+  \caption{Per-scenario F1 on the synthetic benchmark across all four
+    methods ($N=66$ samples). PathogenIQ and Abundance-only both achieve
+    perfect F1 on high-signal scenarios; the SBM-only baseline degenerates
+    on small synthetic datasets due to insufficient co-occurrence graph density.
+    The community and novelty signal advantages are demonstrated on the
+    27-sample real wastewater run (Fig.~\ref{fig:risk_dist}).}
   \label{fig:benchmark}
 \end{figure}
 
@@ -433,12 +436,38 @@ sub-threshold increments.
 \begin{figure}[h]
   \centering
   \includegraphics[width=\columnwidth]{figures/fig2_cusum}
-  \caption{CUSUM early warning on a simulated outbreak site (24 weeks).
-    Top: risk score with threshold (red dashed). Bottom: CUSUM statistic
-    $C_t$ with decision boundary $h=4.0$ (red dashed). The CUSUM fires
-    several weeks before the risk score alone crosses the threshold,
-    illustrating the lead-time advantage of accumulating small consistent signals.}
+  \caption{CUSUM early warning on the real SRR35939 wastewater series
+    (6 sampling runs). Top: risk score per run; red bars indicate runs
+    where the CUSUM alert fired. Bottom: CUSUM statistic $C_t$; three
+    runs exceed the decision boundary $h=4.0$ (red dashed), all with
+    $C_t=4.13$ and sub-threshold individual scores, demonstrating
+    detection via accumulated sub-threshold signal.}
   \label{fig:cusum}
+\end{figure}
+
+\subsection{Real-Data Signal Breakdown}
+
+Fig.~\ref{fig:risk_dist} shows the three-signal decomposition across
+all 27 real wastewater samples, sorted by total risk score.
+The community signal ($\beta=0.25$) is active in 26 of 27 samples,
+contributing uniformly to elevated scores. The novelty signal
+($\gamma=0.25$) varies widely across samples, providing additional
+discriminative power for samples where abundance alone is ambiguous.
+The direct-detection pathway (scatter dots exceeding the stacked bar)
+drives the highest scores, corresponding to ESKAPE genus detections
+at clinically significant abundances.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/fig4_risk_dist}
+  \caption{Multi-signal risk breakdown for all 27 real wastewater
+    samples, sorted by total score. Stacked bars show the additive
+    contributions of abundance ($\alpha=0.50$, blue), community
+    ($\beta=0.25$, orange), and novelty ($\gamma=0.25$, green)
+    signals. Red dots show the final score, which may exceed the
+    stacked sum when the direct-detection pathway fires.
+    The alert threshold (0.6, dashed) is exceeded by 25 of 27 samples.}
+  \label{fig:risk_dist}
 \end{figure}
 
 \subsection{Ablation: Signal Contribution}

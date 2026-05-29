@@ -748,26 +748,166 @@ def write_latex_tables(results: dict, ablation_means: dict,
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  FIGURE 2 (REAL) — CUSUM trace from real wastewater time series
+# ══════════════════════════════════════════════════════════════════════════════
+
+def fig2_cusum_real(report_data: dict, series_key: str = "35939"):
+    """
+    Plot CUSUM trace using real samples that form a time series.
+    Selects samples whose name contains `series_key`, sorted alphabetically
+    as a proxy for temporal order.
+    """
+    samples = report_data["samples"]
+    series = sorted(
+        [s for s in samples if series_key in s["name"]],
+        key=lambda x: x["name"]
+    )
+    if not series:
+        print(f"  [fig2] No samples matching '{series_key}' — falling back to simulated.")
+        fig2_cusum()
+        return
+
+    run_ids  = [s["name"].replace("cleaned_SRR", "SRR").split("SRR")[-1] for s in series]
+    scores   = np.array([s["score"] for s in series])
+    cusums   = np.array([s.get("temporal", {}).get("cusum", 0.0) for s in series])
+    alerts   = np.array([s.get("temporal", {}).get("cusum_alert", False) for s in series])
+    h        = 4.0
+    x        = np.arange(len(series))
+
+    fig, axes = plt.subplots(2, 1, figsize=(ONE_COL * 1.85, 2.5),
+                             sharex=True, gridspec_kw={"hspace": 0.12})
+
+    # ── top: risk score ───────────────────────────────────────────────────────
+    ax = axes[0]
+    ax.bar(x, scores, color=COLORS["score"], alpha=0.75, width=0.6)
+    ax.axhline(0.60, color=COLORS["threshold"], lw=0.9, ls="--",
+               label="Alert threshold (0.6)")
+    for i, (a, sc) in enumerate(zip(alerts, scores)):
+        if a:
+            ax.bar(x[i], sc, color=COLORS["alert"], alpha=0.9, width=0.6)
+    ax.set_ylim(0, 1.0)
+    ax.set_ylabel("Risk score")
+    ax.legend(loc="upper right", frameon=True, framealpha=0.9, fontsize=7)
+    ax.grid(True, axis="y", zorder=0)
+    ax.set_title("CUSUM Early Warning: SRR35939 Wastewater Series (Real Data)",
+                 fontsize=7.5)
+    ax.spines[["top", "right"]].set_visible(False)
+
+    # ── bottom: CUSUM statistic ───────────────────────────────────────────────
+    ax = axes[1]
+    ax.bar(x, cusums, color=COLORS["cusum"], alpha=0.75, width=0.6)
+    ax.axhline(h, color=COLORS["alert"], lw=0.9, ls="--",
+               label=f"Decision boundary ($h={h:.0f}$)")
+    alert_idx = [i for i, a in enumerate(alerts) if a]
+    if alert_idx:
+        ax.bar([x[i] for i in alert_idx], [cusums[i] for i in alert_idx],
+               color=COLORS["alert"], alpha=0.9, width=0.6, label="CUSUM alert")
+        ax.scatter([x[i] for i in alert_idx], [cusums[i] for i in alert_idx],
+                   color=COLORS["alert"], s=28, zorder=5)
+    ax.set_ylim(0, max(cusums.max() * 1.3, h * 1.5))
+    ax.set_ylabel("$C_t$")
+    ax.set_xticks(x)
+    ax.set_xticklabels(run_ids, fontsize=6.5, rotation=20, ha="right")
+    ax.set_xlabel("Sample (run order)")
+    ax.legend(loc="upper left", frameon=True, framealpha=0.9, fontsize=7)
+    ax.grid(True, axis="y", zorder=0)
+    ax.spines[["top", "right"]].set_visible(False)
+
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "fig2_cusum.pdf")
+    fig.savefig(FIG_DIR / "fig2_cusum.png")
+    plt.close(fig)
+    print("  fig2_cusum.pdf  ✓  (real data — SRR35939 series)")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  FIGURE 4 (REAL) — Multi-signal risk breakdown across real samples
+# ══════════════════════════════════════════════════════════════════════════════
+
+def fig4_risk_dist_real(report_data: dict, alert_threshold: float = 0.6):
+    """
+    Stacked bar chart showing the three signal contributions
+    (abundance × α, community × β, novelty × γ) for each real sample,
+    sorted by total risk score.
+    """
+    samples = sorted(report_data["samples"], key=lambda s: s["score"])
+    names   = [s["name"].replace("cleaned_", "").replace("clean_", "") for s in samples]
+    # Shorten SRR IDs for display
+    short   = [n.replace("SRR", "")[-7:] if "SRR" in n else n[:12] for n in names]
+
+    α, β, γ = 0.50, 0.25, 0.25
+    breakdown = [s.get("breakdown", {}) for s in samples]
+    ab   = np.array([b.get("abundance_score", 0.0) * α for b in breakdown])
+    comm = np.array([b.get("community_signal", 0.0) * β for b in breakdown])
+    nov  = np.array([b.get("novelty_signal",   0.0) * γ for b in breakdown])
+    total = np.array([s["score"] for s in samples])
+
+    x = np.arange(len(samples))
+    fig, ax = plt.subplots(figsize=(TWO_COL, 2.6))
+
+    ax.bar(x, ab,   color="#2980b9", alpha=0.85, label=f"Abundance (α={α})",  width=0.7)
+    ax.bar(x, comm, bottom=ab, color="#e67e22", alpha=0.85,
+           label=f"Community (β={β})", width=0.7)
+    ax.bar(x, nov,  bottom=ab + comm, color="#27ae60", alpha=0.85,
+           label=f"Novelty (γ={γ})",   width=0.7)
+
+    # Overlay actual score (may exceed sum if direct-detection path fires)
+    ax.scatter(x, total, color="#c0392b", s=12, zorder=5, label="Final score")
+    ax.axhline(alert_threshold, color="#555", lw=0.9, ls="--",
+               label=f"Alert threshold ({alert_threshold})")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(short, fontsize=5.2, rotation=45, ha="right")
+    ax.set_ylabel("Risk score contribution")
+    ax.set_ylim(0, 1.05)
+    ax.set_title(
+        f"Multi-Signal Risk Breakdown: {len(samples)} Real Wastewater Samples",
+        fontsize=8)
+    ax.legend(ncol=5, frameon=True, framealpha=0.9, edgecolor="#bbb",
+              loc="upper left", fontsize=6.5)
+    ax.grid(True, axis="y", zorder=0, alpha=0.5)
+    ax.spines[["top", "right"]].set_visible(False)
+
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "fig4_risk_dist.pdf")
+    fig.savefig(FIG_DIR / "fig4_risk_dist.png")
+    plt.close(fig)
+    print("  fig4_risk_dist.pdf  ✓  (real data — signal breakdown)")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
 def main():
     parser = argparse.ArgumentParser(description="Generate PathogenIQ paper figures")
     parser.add_argument("--report", default=None,
-                        help="Path to real report.json for overlay on synthetic results")
+                        help="Path to real report.json (enables real-data fig2 + fig4)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--threshold", type=float, default=0.6)
     args = parser.parse_args()
 
+    report_data = None
+    if args.report:
+        import json as _json
+        report_data = _json.load(open(args.report))
+
     print("\nPathogenIQ — Paper Figure Generator")
     print("=" * 42)
-    print(f"Output directory: {FIG_DIR}\n")
+    print(f"Output directory: {FIG_DIR}")
+    if report_data:
+        print(f"Real data: {args.report} ({len(report_data['samples'])} samples)\n")
+    else:
+        print("No --report provided: fig2/fig4 will use simulated data.\n")
 
     print("[1/6] Pipeline architecture diagram ...")
     fig1_pipeline()
 
     print("[2/6] CUSUM temporal trace ...")
-    fig2_cusum()
+    if report_data:
+        fig2_cusum_real(report_data)
+    else:
+        fig2_cusum()
 
     print("[3/6] Running benchmark (all scenarios × all methods) ...")
     results = run_benchmark_all(alert_threshold=args.threshold, seed=args.seed)
@@ -775,8 +915,11 @@ def main():
     print("[4/6] Benchmark F1 bar chart ...")
     fig3_benchmark(results)
 
-    print("[5/6] Risk score distribution violins ...")
-    fig4_risk_dist(results, alert_threshold=args.threshold)
+    print("[5/6] Risk score distribution ...")
+    if report_data:
+        fig4_risk_dist_real(report_data, alert_threshold=args.threshold)
+    else:
+        fig4_risk_dist(results, alert_threshold=args.threshold)
 
     print("[6/6] Ablation figure ...")
     ablation_means, ablation_deltas, ablation_labels = fig5_ablation(results)
