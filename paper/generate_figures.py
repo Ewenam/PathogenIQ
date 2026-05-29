@@ -500,7 +500,7 @@ def fig3_sbm_network(report_data: dict):
     neg_line = plt.Line2D([0], [0], color="#e74c3c", linewidth=0.9,
                           linestyle="dashed", label="Negative co-occ.")
     ax.legend(handles=comm_patches + [pos_line, neg_line],
-              loc="lower left", fontsize=5.5,
+              loc="upper right", fontsize=5.5,
               frameon=True, framealpha=0.92, edgecolor="#ccc",
               handlelength=1.1, handleheight=0.9, borderpad=0.6)
 
@@ -896,7 +896,7 @@ def fig2_cusum_real(report_data: dict, series_key: str = "35939"):
     ax.set_xticks(x)
     ax.set_xticklabels(run_ids, fontsize=6.5, rotation=20, ha="right")
     ax.set_xlabel("Sample (run order)")
-    ax.legend(loc="upper left", frameon=True, framealpha=0.9, fontsize=7)
+    ax.legend(loc="upper right", frameon=True, framealpha=0.9, fontsize=7)
     ax.grid(True, axis="y", zorder=0)
     ax.spines[["top", "right"]].set_visible(False)
 
