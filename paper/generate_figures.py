@@ -835,6 +835,199 @@ def write_latex_tables(results: dict, ablation_means: dict,
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  SBM BOOTSTRAP STABILITY (Tier-3 analysis — numbers only, no figure)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def sbm_bootstrap_stability(report_data: dict, B: int = 100, seed: int = 42) -> dict:
+    """
+    Bootstrap co-assignment stability for the SBM community structure.
+
+    For each pair of taxa (i, j), we track whether they are assigned to the
+    same community in each bootstrap resample.  Within-community pairs (same
+    original community) and between-community pairs (different communities)
+    are compared to characterise how stable the K=3 partition is.
+
+    Returns a dict with summary statistics that can be cited in the paper.
+    """
+    import pandas as pd
+    from pathogeniq.community.graph import build_cooccurrence_graph
+    from pathogeniq.community.sbm import fit_sbm
+    from pathogeniq.ingestion.reader import SampleSet, Sample, filter_taxa
+
+    ab        = report_data["abundance_matrix"]
+    taxa_all  = ab["taxa"]
+    sample_names = ab["samples"]
+    X         = np.array(ab["values"])          # (n_taxa, n_samples)
+    N         = X.shape[1]
+    T         = len(taxa_all)
+
+    # Original community assignments
+    nodes = {n["id"]: n["community"] for n in report_data["network"]["nodes"]}
+    orig_comm = np.array([nodes.get(t, -1) for t in taxa_all])
+
+    # Keep only taxa that appear in the network
+    mask      = orig_comm >= 0
+    X_net     = X[mask]
+    taxa_net  = [t for t, m in zip(taxa_all, mask) if m]
+    orig_net  = orig_comm[mask]
+    n_taxa    = len(taxa_net)
+
+    # Pairwise co-assignment accumulators
+    # co_count[i, j] = # runs where taxa i and j were co-assigned
+    # pair_count[i, j] = # runs where both taxa were present (in same graph)
+    co_count    = np.zeros((n_taxa, n_taxa), dtype=np.int32)
+    pair_count  = np.zeros((n_taxa, n_taxa), dtype=np.int32)
+    k_hist      = []   # K selected in each run
+    valid_runs  = 0
+
+    rng = np.random.default_rng(seed)
+    t2i = {t: i for i, t in enumerate(taxa_net)}
+
+    for b in range(B):
+        idx    = rng.integers(0, N, size=N)
+        X_boot = X_net[:, idx]
+
+        df = pd.DataFrame(X_boot, index=taxa_net,
+                          columns=[f"s{i}" for i in range(N)])
+        samples_list = [Sample(name=c) for c in df.columns]
+        rel = df.div(df.sum(axis=0), axis=1).fillna(0)
+        ss  = SampleSet(samples=samples_list, taxa_matrix=df, relative_abundance=rel)
+        ss  = filter_taxa(ss, min_prevalence=0.05, min_total_reads=0)
+
+        try:
+            adj, tn, _ = build_cooccurrence_graph(ss)
+            if len(tn) < 5:
+                continue
+            sbm = fit_sbm(adj, taxa_names=tn, max_k=min(8, len(tn) - 1), n_init=3)
+        except Exception:
+            continue
+
+        k_hist.append(len(set(sbm.labels)))
+        valid_runs += 1
+
+        # Map bootstrap taxa back to global index
+        boot_label = {taxon: sbm.labels[i]
+                      for i, taxon in enumerate(sbm.taxa_names)}
+
+        present = [t for t in taxa_net if t in boot_label]
+        for i_t, ti in enumerate(present):
+            gi = t2i[ti]
+            li = boot_label[ti]
+            for j_t, tj in enumerate(present):
+                if j_t <= i_t:
+                    continue
+                gj = t2i[tj]
+                lj = boot_label[tj]
+                pair_count[gi, gj] += 1
+                pair_count[gj, gi] += 1
+                if li == lj:
+                    co_count[gi, gj] += 1
+                    co_count[gj, gi] += 1
+
+    if valid_runs == 0:
+        print("  [bootstrap] no valid runs — skipping")
+        return {}
+
+    # Co-assignment probability matrix (NaN where pair never co-appeared)
+    with np.errstate(invalid="ignore"):
+        prob = np.where(pair_count > 0, co_count / pair_count, np.nan)
+
+    # Within-community pairs vs. between-community pairs
+    within_probs, between_probs = [], []
+    for i in range(n_taxa):
+        for j in range(i + 1, n_taxa):
+            p = prob[i, j]
+            if np.isnan(p):
+                continue
+            if orig_net[i] == orig_net[j]:
+                within_probs.append(p)
+            else:
+                between_probs.append(p)
+
+    k_counts = {k: k_hist.count(k) for k in sorted(set(k_hist))}
+    modal_k  = max(k_counts, key=k_counts.get)
+
+    results = {
+        "valid_runs":    valid_runs,
+        "within_mean":   float(np.mean(within_probs))  if within_probs  else 0.0,
+        "within_std":    float(np.std(within_probs))   if within_probs  else 0.0,
+        "between_mean":  float(np.mean(between_probs)) if between_probs else 0.0,
+        "between_std":   float(np.std(between_probs))  if between_probs else 0.0,
+        "k_distribution": k_counts,
+        "modal_k":        modal_k,
+        "k_modal_frac":   k_counts[modal_k] / valid_runs,
+        "prob_matrix":    prob,
+        "taxa_net":       taxa_net,
+        "orig_comm":      orig_net.tolist(),
+    }
+
+    print(f"\n  SBM Bootstrap Stability (B={valid_runs} valid runs):")
+    print(f"    Within-community co-assignment:  {results['within_mean']*100:.1f}% ± {results['within_std']*100:.1f}%")
+    print(f"    Between-community co-assignment: {results['between_mean']*100:.1f}% ± {results['between_std']*100:.1f}%")
+    print(f"    K distribution: {k_counts}  (modal K={modal_k}, {results['k_modal_frac']*100:.0f}% of runs)")
+
+    return results
+
+
+def fig6_sbm_consensus(boot_results: dict):
+    """
+    Consensus matrix heatmap — shows co-assignment probability for all taxon pairs,
+    taxa ordered by original community.  Stable communities appear as dense blocks.
+    """
+    if not boot_results:
+        return
+
+    prob      = boot_results["prob_matrix"]
+    orig_comm = np.array(boot_results["orig_comm"])
+    taxa_net  = boot_results["taxa_net"]
+
+    # Sort taxa by community
+    order   = np.argsort(orig_comm, kind="stable")
+    prob_s  = prob[np.ix_(order, order)]
+
+    fig, ax = plt.subplots(figsize=(ONE_COL * 1.85, ONE_COL * 1.85))
+
+    im = ax.imshow(prob_s, aspect="auto", cmap="Blues",
+                   vmin=0, vmax=1, interpolation="nearest")
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
+                 label="Co-assignment probability")
+
+    # Community boundary lines
+    comm_sorted = orig_comm[order]
+    for k in range(1, 3):
+        boundary = np.where(comm_sorted == k)[0]
+        if len(boundary):
+            b = boundary[0] - 0.5
+            ax.axhline(b, color="white", lw=1.2)
+            ax.axvline(b, color="white", lw=1.2)
+
+    # Community labels on axes
+    comm_sizes = [np.sum(orig_comm == k) for k in range(3)]
+    comm_mids  = np.cumsum([0] + comm_sizes[:-1]) + np.array(comm_sizes) / 2
+    ax.set_xticks(comm_mids)
+    ax.set_xticklabels([f"C{k}\n(n={s})" for k, s in enumerate(comm_sizes)], fontsize=6)
+    ax.set_yticks(comm_mids)
+    ax.set_yticklabels([f"C{k}" for k in range(3)], fontsize=6)
+
+    B = boot_results["valid_runs"]
+    wm = boot_results["within_mean"] * 100
+    bm = boot_results["between_mean"] * 100
+    ax.set_title(
+        rf"SBM Consensus Matrix ($B={B}$ bootstrap resamples)",
+        fontsize=7.5)
+    fig.text(0.5, -0.02,
+             rf"Within-community co-assignment: {wm:.1f}\%; "
+             rf"between-community: {bm:.1f}\%",
+             ha="center", fontsize=6, color="#555", style="italic")
+
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "fig6_consensus.pdf")
+    fig.savefig(FIG_DIR / "fig6_consensus.png")
+    plt.close(fig)
+    print("  fig6_consensus.pdf ✓  (SBM bootstrap consensus matrix)")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  FIGURE 2 (REAL) — CUSUM trace from real wastewater time series
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1037,6 +1230,12 @@ def main():
     print("[7/7] Writing LaTeX table numbers ...")
     write_latex_tables(results, ablation_means, ablation_deltas, ablation_labels,
                        Path(__file__).parent / "table_results.tex")
+
+    if report_data:
+        print("[8/8] SBM bootstrap stability (B=100 resamples) ...")
+        boot_results = sbm_bootstrap_stability(report_data, B=100, seed=42)
+        if boot_results:
+            fig6_sbm_consensus(boot_results)
 
     print(f"\nDone. Files written to {FIG_DIR}/")
     print("Include in LaTeX with:")

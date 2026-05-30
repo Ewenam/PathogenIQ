@@ -259,6 +259,8 @@ A community $k$ is flagged as \emph{pathogen-enriched} if the fraction
 of its member taxa in our curated 150-entry pathogen database exceeds
 $\theta_{\text{comm}} = 0.20$, i.e., at least one in five community
 members is a known pathogen.
+We assess partition stability via $B=100$ bootstrap resamples
+(Section~\ref{sec:results}).
 
 \subsection{Multi-Signal Risk Scoring}
 
@@ -606,8 +608,16 @@ ESKAPE genus detections at clinically relevant abundances, but cannot
 be confirmed as true positives without paired epidemiological records.
 The Spearman co-occurrence graph is constructed from $N=27$ samples;
 prior co-occurrence network studies typically recommend $N \geq 50$ for
-robust edge inference~\cite{Barber2012}, and the community assignments
-should be treated as preliminary at this sample size.
+robust edge inference~\cite{Barber2012}.
+Bootstrap stability analysis ($B=100$ resamples of the 27 samples)
+confirms this fragility: while $K=3$ is the modal selection (43\% of
+bootstrap fits), within-community taxon co-assignment probability
+(41.5\%) is only marginally higher than between-community co-assignment
+(42.1\%), indicating that the community partition should be treated as
+preliminary at this sample size.
+The community signal should therefore be interpreted as a structural
+hypothesis about pathogen co-colonisation patterns in this cohort,
+rather than a statistically validated network property.
 Performance figures are further contingent on Kraken2 database
 completeness, and the curated pathogen risk weights require periodic
 expert review as pathogen threat landscapes evolve.
