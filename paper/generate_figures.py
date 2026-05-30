@@ -1106,32 +1106,38 @@ def fig2_cusum_real(report_data: dict, series_key: str = "35939"):
 
 def fig4_risk_dist_real(report_data: dict, alert_threshold: float = 0.6):
     """
-    Violin plots of each signal's distribution across all 27 real samples,
-    plus the composite risk score — one violin per signal type.
-    """
-    samples = report_data["samples"]
-    α, β, γ = 0.50, 0.25, 0.25
+    Signal distribution figure for 27 real wastewater samples.
 
-    breakdown = [s.get("breakdown", {}) for s in samples]
-    ab_vals   = [b.get("abundance_score",  0.0) for b in breakdown]
-    comm_vals = [b.get("community_signal", 0.0) for b in breakdown]
-    nov_vals  = [b.get("novelty_signal",   0.0) for b in breakdown]
+    Community signal is binary (0 or 1), so it is shown as a bar chart
+    (n active / n total) rather than a violin, which would misleadingly
+    suggest a continuous distribution.  Abundance, novelty, and composite
+    signals are genuinely continuous and shown as violins with jitter.
+    """
+    samples    = report_data["samples"]
+    n_samples  = len(samples)
+
+    breakdown  = [s.get("breakdown", {}) for s in samples]
+    ab_vals    = [b.get("abundance_score",  0.0) for b in breakdown]
+    comm_vals  = [b.get("community_signal", 0.0) for b in breakdown]
+    nov_vals   = [b.get("novelty_signal",   0.0) for b in breakdown]
     total_vals = [s["score"] for s in samples]
 
-    groups = [
-        (ab_vals,    "Abundance\n(α=0.50)",   "#2980b9"),
-        (comm_vals,  "Community\n(β=0.25)",   "#e67e22"),
-        (nov_vals,   "Novelty\n(γ=0.25)",     "#27ae60"),
-        (total_vals, "Composite\nScore",      "#c0392b"),
+    n_active = sum(1 for v in comm_vals if v > 0)
+
+    # Positions: 1=Abundance, 2=Community(bar), 3=Novelty, 4=Composite
+    violin_groups = [
+        (1, ab_vals,    "Abundance\n(α=0.50)",  "#2980b9"),
+        (3, nov_vals,   "Novelty\n(γ=0.25)",    "#27ae60"),
+        (4, total_vals, "Composite\nScore",     "#c0392b"),
     ]
+    COMM_COLOR = "#e67e22"
 
     fig, ax = plt.subplots(figsize=(TWO_COL, 2.5))
 
-    positions = np.arange(1, len(groups) + 1)
-    for pos, (data, label, color) in zip(positions, groups):
+    # ── Violin plots for continuous signals ──────────────────────────────────
+    for pos, data, label, color in violin_groups:
         parts = ax.violinplot([data], positions=[pos],
-                              widths=0.55, showmedians=True,
-                              showextrema=True)
+                              widths=0.55, showmedians=True, showextrema=True)
         for pc in parts["bodies"]:
             pc.set_facecolor(color)
             pc.set_alpha(0.55)
@@ -1140,39 +1146,52 @@ def fig4_risk_dist_real(report_data: dict, alert_threshold: float = 0.6):
             if key in parts:
                 parts[key].set_color(color)
                 parts[key].set_linewidth(0.9)
-
-        # Jitter strip overlay so individual points are visible
         rng = np.random.default_rng(pos)
         jitter = rng.uniform(-0.1, 0.1, len(data))
         ax.scatter(np.full(len(data), pos) + jitter, data,
                    color=color, alpha=0.6, s=14, zorder=4)
 
+    # ── Community signal: bar chart (binary 0/1) ──────────────────────────────
+    # Show fraction active as a filled bar, fraction inactive as grey remainder
+    ax.bar([2], [n_active / n_samples], width=0.55,
+           color=COMM_COLOR, alpha=0.75, zorder=3,
+           label=f"Active ({n_active}/{n_samples})")
+    ax.bar([2], [1 - n_active / n_samples], width=0.55,
+           bottom=[n_active / n_samples],
+           color="#ddd", alpha=0.75, zorder=3,
+           label=f"Inactive ({n_samples - n_active}/{n_samples})")
+    ax.text(2, n_active / n_samples + 0.03,
+            f"{n_active}/{n_samples}\n({n_active/n_samples*100:.0f}\\%)",
+            ha="center", va="bottom", fontsize=6.5,
+            color=COMM_COLOR, fontweight="bold", zorder=5)
+
     ax.axhline(alert_threshold, color="#555", lw=0.9, ls="--")
     ax.text(4.42, alert_threshold + 0.03, f"θ={alert_threshold}",
             fontsize=6.5, color="#555", va="bottom")
 
-    ax.set_xticks(positions)
-    ax.set_xticklabels([g[1] for g in groups], fontsize=7.5)
-    ax.set_ylim(-0.05, 1.1)
+    ax.set_xticks([1, 2, 3, 4])
+    ax.set_xticklabels(
+        ["Abundance\n(α=0.50)", "Community\n(β=0.25)",
+         "Novelty\n(γ=0.25)", "Composite\nScore"],
+        fontsize=7.5)
+    ax.set_ylim(-0.05, 1.15)
     ax.set_ylabel("Signal value")
     ax.set_title(
-        f"Risk Signal Distributions — {len(samples)} Real Wastewater Samples",
+        f"Risk Signal Distributions — {n_samples} Real Wastewater Samples",
         fontsize=8)
     ax.grid(True, axis="y", zorder=0, alpha=0.5)
     ax.spines[["top", "right"]].set_visible(False)
 
-    # Footnote annotation instead of legend
     fig.text(0.5, -0.01,
-             "Horizontal line: alert threshold (θ=0.6).  "
-             "Median shown as white bar.  $n=27$ samples per violin.",
-             ha="center", va="top", fontsize=6, color="#555",
-             style="italic")
+             "Abundance, novelty, and composite: violin + jitter (continuous signals).  "
+             "Community: stacked bar (binary signal — active vs.\ inactive).",
+             ha="center", va="top", fontsize=6, color="#555", style="italic")
 
     fig.tight_layout()
     fig.savefig(FIG_DIR / "fig4_risk_dist.pdf")
     fig.savefig(FIG_DIR / "fig4_risk_dist.png")
     plt.close(fig)
-    print("  fig4_risk_dist.pdf  ✓  (real data — signal violin plots)")
+    print("  fig4_risk_dist.pdf  ✓  (real data — mixed violin/bar, binary community)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

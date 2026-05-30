@@ -51,7 +51,8 @@ automated characterization of flagged novel taxa. On 27 public wastewater metage
 co-occurrence signal active in 96.3\% of samples and CUSUM alerts
 raised on the SRR35939 series via accumulated sub-threshold signal.
 On six controlled synthetic benchmark scenarios ($N=66$ samples),
-the system achieves zero false positives across all 22 clean samples,
+the system achieves zero false positives on clean samples (FAR=0.0\%,
+Specificity=100\% observed in all 10 evaluated seeds),
 reducing false alert rates by 50 percentage points over na\"{i}ve
 abundance-threshold approaches. The SBM community and isolation-forest
 novelty signals, which require adequate sample depth to form estimable
@@ -422,13 +423,14 @@ runs by which PathogenIQ flags a site before the baseline threshold method.
 \subsection{Detection Performance}
 
 Table~\ref{tab:main} summarizes detection performance on the synthetic
-benchmark across all methods. PathogenIQ and Abundance-only both achieve
-perfect detection (Sensitivity=100\%, Specificity=100\%, F1=1.000) on
+benchmark across all methods. PathogenIQ achieves near-perfect detection
+(Sensitivity=99.6\% [96.8, 100.0], F1=99.8\% [98.3, 100.0]) on
 high-signal scenarios, confirming that the direct-detection pathway
 fires reliably on outbreak-level contamination. The critical
 differentiation is on false alert rate: the Threshold baseline fires
 on 50\% of clean samples (FAR=50\%), while PathogenIQ's multi-signal
-calibrated scorer produces zero false positives. The SBM-only baseline
+calibrated scorer produces zero false positives (FAR=0.0\%, Spec.=100\%
+in all 10 seeds). The SBM-only baseline
 achieves 0\% recall on synthetic data because co-occurrence graphs
 require adequate sample depth to form edges; on the 27-sample real
 wastewater run the community signal is active in 26/27 samples
@@ -463,8 +465,11 @@ scenarios (\textit{high contamination}, \textit{critical pathogen spike},
 reliably fires. The \textit{novel taxon intrusion} scenario is reported
 as ``---'' because the Isolation Forest novelty signal alone does not
 produce composite scores above $\theta=0.6$ when abundance is low;
-the scenario is intentionally designed to test a sub-threshold regime
-where no alert is correct, so F1 is undefined rather than zero.
+PathogenIQ produces composite scores of 0.09--0.18 on this scenario
+(mean 0.094, max 0.182), confirming the novelty signal engages but
+is not independently calibrated to trigger alerts at this threshold.
+The scenario is intentionally designed as a sub-threshold stress test,
+so F1 is undefined rather than zero.
 Calibrating the novelty signal to independently trigger alerts is
 deferred to the journal extension.
 
@@ -547,13 +552,14 @@ at clinically significant abundances.
   \centering
   \includegraphics[width=\columnwidth]{figures/fig4_risk_dist}
   \caption{Risk signal distributions across all 27 real wastewater
-    samples. Each violin shows the distribution of one signal's values
-    with individual sample points overlaid (jittered). Abundance and
-    community signals are bimodally distributed (0 or active), while
-    the novelty signal spans the full range, providing continuous
-    discriminative power. The composite score distribution (rightmost)
-    concentrates above the alert threshold (dashed), confirming that
-    the three signals combine to produce well-calibrated HIGH alerts.}
+    samples. Abundance, novelty, and composite scores are shown as
+    violins with individual-sample jitter (continuous signals).
+    The community signal is binary (0 or 1) and shown as a stacked
+    bar: 26/27 samples (96.3\%) have an active community signal,
+    contributing a uniform $\beta=0.25$ boost to those samples' risk
+    scores. The novelty signal spans the full $[0,1]$ range, providing
+    continuous discriminative power between samples of similar
+    abundance profiles.}
   \label{fig:risk_dist}
 \end{figure}
 
@@ -607,17 +613,24 @@ ground-truth labels; the 21 HIGH-risk events are plausible based on
 ESKAPE genus detections at clinically relevant abundances, but cannot
 be confirmed as true positives without paired epidemiological records.
 The Spearman co-occurrence graph is constructed from $N=27$ samples;
-prior co-occurrence network studies typically recommend $N \geq 50$ for
-robust edge inference~\cite{Barber2012}.
+network inference reliability generally improves with larger sample
+sizes, and $N=27$ is below the typical range used in microbial
+co-occurrence studies~\cite{Barber2012}.
 Bootstrap stability analysis ($B=100$ resamples of the 27 samples)
 confirms this fragility: while $K=3$ is the modal selection (43\% of
 bootstrap fits), within-community taxon co-assignment probability
-(41.5\%) is only marginally higher than between-community co-assignment
-(42.1\%), indicating that the community partition should be treated as
-preliminary at this sample size.
-The community signal should therefore be interpreted as a structural
-hypothesis about pathogen co-colonisation patterns in this cohort,
-rather than a statistically validated network property.
+(41.5\%) is statistically indistinguishable from between-community
+co-assignment (42.1\%), indicating the partition topology is not yet
+stable at this sample size.
+We continue to report the community signal for two reasons: (1) $K=3$
+is the modal selection across bootstrap resamples, providing a
+structural hypothesis about pathogen co-colonisation patterns worth
+validating at larger $N$; and (2) the 96.3\% engagement rate on real
+samples is a \emph{feasibility demonstration} that pathogen-enriched
+community structure is consistently detectable at this scale, even if
+the specific community boundaries are not yet statistically robust.
+The community signal should therefore be interpreted as a preliminary
+operational signal rather than a validated network property.
 Performance figures are further contingent on Kraken2 database
 completeness, and the curated pathogen risk weights require periodic
 expert review as pathogen threat landscapes evolve.
@@ -628,6 +641,12 @@ to detect novel variants before taxonomic classification, extend
 the dashboard to multi-site geospatial visualization, and validate
 on clinical metagenomic cohorts beyond the wastewater setting.
 
+The central ML contribution is the use of SBM community membership as a
+risk signal: when a sample's dominant co-occurrence community is
+pathogen-enriched, that co-colonisation context elevates the composite
+risk score even when individual taxon abundances are sub-threshold,
+providing detection capability that single-signal approaches cannot
+replicate at real sequencing depth.
 In summary, PathogenIQ provides the public health and bioinformatics
 community with a unified, open-source ML biosurveillance system that
 operates on standard Kraken2 outputs, produces interpretable risk scores,
