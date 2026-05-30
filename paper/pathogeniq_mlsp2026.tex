@@ -413,8 +413,8 @@ We compare against three baselines of increasing sophistication:
 
 We report sensitivity (recall), specificity, F1 score, and false alert
 rate (FAR = FP / total samples) at the alert threshold $\theta = 0.6$.
-For temporal detection, we report \emph{alert lead time}: the number of
-runs by which PathogenIQ flags a site before the baseline threshold method.
+For temporal detection we report whether CUSUM detects signals that the
+single-point threshold baseline ($\hat{r}_n \geq \theta$) misses entirely.
 
 % ── 5. Results ────────────────────────────────────────────────────────────────
 \section{Results}
@@ -488,10 +488,11 @@ Low contamination        & spec.\ 1.00 & spec.\ 1.00 \\
 High contamination       & \textbf{1.000} & 1.000 \\
 Critical pathogen spike  & \textbf{1.000} & 1.000 \\
 Multi-pathogen community & \textbf{1.000} & 1.000 \\
-Novel taxon intrusion    & — & — \\
+Novel taxon intrusion    & $-$\dag & $-$\dag \\
 \midrule
 \textbf{Mean F1 (evaluated)} & \textbf{1.000} & 1.000 \\
 \bottomrule
+\multicolumn{3}{l}{\footnotesize $^\dag$PathogenIQ composite scores 0.09--0.18 (mean 0.094); no alert expected at $\theta=0.6$.}\\
 \end{tabular}
 \end{table}
 
@@ -518,11 +519,14 @@ Fig.~\ref{fig:cusum} shows CUSUM trajectories for the simulated
 outbreak scenario (Section IV-A). On the 27-sample real wastewater
 run, PathogenIQ raised CUSUM alerts ($C_t=4.13 > h=4.0$) at 3
 sampling sites in the SRR35939 series, with sustained z-scores of
-0.73 across consecutive runs — below the single-point threshold
-($\theta=0.6$) but detected via accumulated signal. This demonstrates
-the core lead-time advantage of CUSUM: slow-rising contamination that
-would be missed by single-point thresholds is detected by accumulating
-sub-threshold increments.
+0.73 across consecutive runs.
+Individual risk scores remain below $\theta=0.6$ throughout this series,
+so the single-point threshold baseline never fires on these sites —
+PathogenIQ's CUSUM is the only method that detects the accumulated
+sub-threshold signal at all.
+This is the core advantage of CUSUM over single-point thresholding:
+slow-rising contamination that would be missed entirely by a threshold
+baseline is surfaced by accumulating sub-threshold increments.
 
 \begin{figure}[h]
   \centering
@@ -722,19 +726,9 @@ F.~P. Breitwieser, J.~Lu, and S.~L. Salzberg, ``A review of methods and
 databases for metagenomic classification and assembly,''
 \textit{Briefings in Bioinformatics}, vol.~20, pp.~1125--1136, 2019.
 
-\bibitem{Segata2012}
-N.~Segata et al., ``Metagenomic microbial community profiling using unique
-clade-specific marker genes,''
-\textit{Nature Methods}, vol.~9, pp.~811--814, 2012.
-
 \bibitem{Quince2017}
 C.~Quince et al., ``Shotgun metagenomics, from sampling to analysis,''
 \textit{Nature Biotechnology}, vol.~35, pp.~833--844, 2017.
-
-\bibitem{Sczyrba2017}
-A.~Sczyrba et al., ``Critical Assessment of Metagenome Interpretation:
-A Benchmark of Metagenomics Software,''
-\textit{Nature Methods}, vol.~14, pp.~1063--1071, 2017.
 
 \bibitem{Liang2020}
 Q.~Liang et al., ``DeepMicrobes: taxonomic classification for metagenomics
