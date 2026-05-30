@@ -159,6 +159,35 @@ fast, accurate protein structure prediction at scale.
 We use ESMFold to automatically assess the structural context of flagged
 novel taxa, a step previously requiring manual analysis by domain experts.
 
+Table~\ref{tab:comparison} summarises the capabilities of representative
+prior systems relative to PathogenIQ.
+
+\begin{table}[h]
+\centering
+\caption{Feature comparison of metagenomic surveillance systems.
+  \checkmark\ = supported; {---} = not supported.}
+\label{tab:comparison}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lccccccc}
+\toprule
+\textbf{System} & \rotatebox{60}{\textbf{Multi-pathogen}} &
+                  \rotatebox{60}{\textbf{ML risk score}} &
+                  \rotatebox{60}{\textbf{Community (SBM)}} &
+                  \rotatebox{60}{\textbf{Temporal CUSUM}} &
+                  \rotatebox{60}{\textbf{Novelty detect.}} &
+                  \rotatebox{60}{\textbf{Protein charact.}} &
+                  \rotatebox{60}{\textbf{Dashboard}} \\
+\midrule
+Freyja~\cite{Karthikeyan2022}       & ---        & ---        & ---        & ---        & ---        & ---        & --- \\
+COJAC~\cite{Jahn2022}               & ---        & ---        & ---        & ---        & ---        & ---        & --- \\
+Kraken2+Bracken~\cite{Wood2019}     & \checkmark & ---        & ---        & ---        & ---        & ---        & --- \\
+DeepMicrobes~\cite{Liang2020}       & \checkmark & ---        & ---        & ---        & ---        & ---        & --- \\
+\textbf{PathogenIQ (ours)}          & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
 % ── 3. Methods ────────────────────────────────────────────────────────────────
 \section{Methods}
 
