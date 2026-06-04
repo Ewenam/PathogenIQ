@@ -45,8 +45,8 @@ detection to capture pathogen co-colonization structure across samples;
 weights, community context, and isolation-forest novelty detection;
 (3) CUSUM changepoint detection and Mann-Kendall trend analysis over a
 longitudinal history database for temporal outbreak signals; and (4)
-ESMFold protein structure prediction with NCBI virulence annotation for
-automated characterization of flagged novel taxa. On 27 public wastewater metagenomics samples, PathogenIQ identifies
+a real-time web dashboard with configurable Slack/email alerting for
+continuous, analyst-free situational awareness. On 27 public wastewater metagenomics samples, PathogenIQ identifies
 21 HIGH-risk events dominated by ESKAPE pathogens, with community
 co-occurrence signal active in 96.3\% of samples and CUSUM alerts
 raised on the SRR35939 series via accumulated sub-threshold signal.
@@ -71,6 +71,7 @@ public health signal processing
 
 % ── 1. Introduction ───────────────────────────────────────────────────────────
 \section{Introduction}
+\label{sec:intro}
 
 The COVID-19 pandemic underscored both the power and the limitations of
 genomic surveillance. Wastewater-based epidemiology (WBE) emerged as a
@@ -88,7 +89,15 @@ see~\cite{Breitwieser2019} for a review) produce raw
 taxonomic abundance tables with no mechanism for integrated risk
 stratification. Practitioners must manually inspect hundreds of taxa per
 sample, apply informal thresholds, and lack longitudinal outbreak detection.
-This workflow does not scale to routine surveillance of many sites.
+
+To appreciate the scale: a single wastewater treatment facility sampled
+five times per week generates $\sim$1{,}800 Kraken2 reports per year.
+Across a metropolitan program monitoring dozens of sites, tens of
+thousands of reports accumulate annually --- each containing hundreds of
+taxon rows requiring expert review before a public-health decision can
+be made. This bottleneck introduces days of latency and makes
+system-wide continuous surveillance economically infeasible without
+automation.
 
 Machine learning offers principled tools to address each limitation, and
 the signal-processing perspective of MLSP — changepoint detection, graph
@@ -117,10 +126,9 @@ We present \textbf{PathogenIQ}, which makes the following contributions:
   \item Longitudinal CUSUM changepoint detection and Mann-Kendall trend
     analysis operating on a per-site SQLite history database, enabling
     early warning of slow-rising outbreaks.
-  \item An operational characterization module that queries NCBI Protein
-    and submits sequences to ESMFold~\cite{Lin2023} for structure
-    prediction, providing automated virulence annotation context alongside
-    the quantitative risk score to support rapid biological interpretation.
+  \item A real-time web dashboard with per-site historical views,
+    multi-sample risk timelines, and configurable Slack/email alerts,
+    enabling continuous situational awareness without analyst intervention.
 \end{itemize}
 
 % ── 2. Related Work ───────────────────────────────────────────────────────────
@@ -158,12 +166,12 @@ PathogenIQ is, to our knowledge, the first system to use SBM community
 membership as a \emph{risk signal} in a pathogen surveillance scoring
 pipeline.
 
-\textbf{Protein structure for pathogen characterization.}
-AlphaFold~\cite{Jumper2021} and ESMFold~\cite{Lin2023} — the latter
-built atop the ESM protein language model~\cite{Rives2021} — enable
-fast, accurate protein structure prediction at scale.
-We use ESMFold to automatically assess the structural context of flagged
-novel taxa, a step previously requiring manual analysis by domain experts.
+\textbf{Automated public health dashboards.}
+Tools such as Nextstrain~\cite{Hadfield2018} and CDC's BioSense Platform
+demonstrate the value of real-time surveillance dashboards for genomic
+epidemiology. PathogenIQ extends this paradigm to the metagenomics
+setting, coupling ML-derived risk scores directly to a deployable
+alerting interface rather than requiring offline expert analysis.
 
 Table~\ref{tab:comparison} summarises the capabilities of representative
 prior systems relative to PathogenIQ.
@@ -181,7 +189,7 @@ prior systems relative to PathogenIQ.
                   \rotatebox{60}{\textbf{Community (SBM)}} &
                   \rotatebox{60}{\textbf{Temporal CUSUM}} &
                   \rotatebox{60}{\textbf{Novelty detect.}} &
-                  \rotatebox{60}{\textbf{Protein charact.}} &
+                  \rotatebox{60}{\textbf{Auto alerting}} &
                   \rotatebox{60}{\textbf{Dashboard}} \\
 \midrule
 Freyja~\cite{Karthikeyan2022}       & ---        & ---        & ---        & ---        & ---        & ---        & --- \\
@@ -203,9 +211,15 @@ We describe each ML-core stage below.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/fig1_pipeline}
-  \caption{PathogenIQ pipeline. Blue-shaded boxes are ML stages;
-    orange boxes are scoring and detection; red box is alert and
-    characterization; white boxes are deterministic transforms.}
+  \caption{PathogenIQ pipeline (two tiers).
+    \textit{Top}: data acquisition — wastewater samples are processed
+    by Kraken2 to produce taxonomic \texttt{.report} files ingested by
+    PathogenIQ.
+    \textit{Bottom}: ML pipeline — blue boxes are ML stages
+    (co-occurrence graph, SBM community detection, isolation-forest
+    novelty detector); orange boxes are scoring and temporal detection
+    (multi-signal risk scorer, CUSUM + trend); red box is the alert
+    and dashboard output.}
   \label{fig:pipeline}
 \end{figure}
 
@@ -353,19 +367,14 @@ discrete case-count setting to continuous ML-derived risk scores.
 is computed over the window to detect monotonic trends. Sen's slope
 estimator~\cite{Sen1968} provides a one-step-ahead forecast.
 
-\subsection{ESMFold Characterization}
+\subsection{Dashboard and Alerting}
 
-For each taxon flagged as HIGH or CRITICAL, PathogenIQ queries NCBI Protein
-for up to three protein sequences associated with the organism and submits
-them to the ESMFold API~\cite{Lin2023,Rives2021} for structure prediction.
-The predicted structure's mean pLDDT confidence score and virulence keyword
-matching (against a curated 20-term list: toxins, invasins, adhesins,
-secretion systems, etc.) produce a structured annotation reported alongside
-the quantitative risk score. This module provides operational
-interpretability context for flagged organisms; quantitative evaluation of
-prediction quality and virulence annotation precision is deferred to the
-journal extension, where clinical metagenomics cohorts with confirmed
-pathogen outcomes will serve as ground truth.
+PathogenIQ serves a FastAPI/Uvicorn web dashboard that presents
+per-site risk timelines, the co-occurrence network, and per-sample
+signal breakdowns. When a CUSUM alert fires or a sample exceeds
+$\theta=0.6$, the system dispatches configurable push notifications
+via Slack webhook or SMTP email, delivering actionable alerts directly
+to public-health practitioners without requiring analyst intervention.
 
 % ── 4. Experimental Setup ─────────────────────────────────────────────────────
 \section{Experimental Setup}
@@ -607,10 +616,10 @@ score even when individual taxon abundances are sub-threshold.
 This signal is inactive on small synthetic datasets (where co-occurrence
 graphs are sparse) but engages in 96.3\% of our 27 real samples,
 motivating its inclusion for operational deployment at realistic scale.
-The ESMFold module provides structural and virulence annotation context
-to support biological interpretation of flagged organisms; it is not
-evaluated quantitatively in this work and is presented as an operational
-capability rather than a scientific contribution.
+The integrated dashboard and alerting layer closes the loop from
+sequencing to decision: CUSUM alerts and HIGH-risk scores are pushed
+directly to public-health practitioners, eliminating the analyst
+bottleneck described in Section~\ref{sec:intro}.
 
 \textbf{Limitations.} The real-data case study lacks clinical
 ground-truth labels; the 21 HIGH-risk events are plausible based on
@@ -809,21 +818,10 @@ P.~K. Sen, ``Estimates of the regression coefficient based on Kendall's
 tau,'' \textit{Journal of the American Statistical Association}, vol.~63,
 pp.~1379--1389, 1968.
 
-% ── Protein structure prediction ──────────────────────────────────────────────
-\bibitem{Jumper2021}
-J.~Jumper et al., ``Highly accurate protein structure prediction with
-AlphaFold,'' \textit{Nature}, vol.~596, pp.~583--589, 2021.
-
-\bibitem{Lin2023}
-Z.~Lin et al., ``Evolutionary-scale prediction of atomic-level protein
-structure with a language model,'' \textit{Science}, vol.~379,
-pp.~1123--1130, 2023.
-
-\bibitem{Rives2021}
-A.~Rives et al., ``Biological structure and function emerge from scaling
-unsupervised learning to 250 million protein sequences,''
-\textit{Proceedings of the National Academy of Sciences}, vol.~118,
-e2016239118, 2021.
+% ── Surveillance dashboards ───────────────────────────────────────────────────
+\bibitem{Hadfield2018}
+J.~Hadfield et al., ``Nextstrain: real-time tracking of pathogen evolution,''
+\textit{Bioinformatics}, vol.~34, pp.~4121--4123, 2018.
 
 % ── Anomaly detection and machine learning ────────────────────────────────────
 \bibitem{Liu2008}

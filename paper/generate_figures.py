@@ -83,65 +83,241 @@ TWO_COL = 7.22    # IEEE double column width (inches)
 #  FIGURE 1 — Pipeline Architecture
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _draw_tube(ax, cx, y_base, tube_h=0.18, tube_w=0.055,
+               liquid_frac=0.55, body_color="#d6eaf8",
+               liquid_color="#2471a3", label=None):
+    """Draw a stylised test tube (rectangle body + rounded bottom cap)."""
+    from matplotlib.patches import FancyBboxPatch, Ellipse
+    # Tube body
+    ax.add_patch(FancyBboxPatch(
+        (cx - tube_w / 2, y_base), tube_w, tube_h,
+        boxstyle="round,pad=0.005",
+        facecolor=body_color, edgecolor="#555", linewidth=0.6, zorder=3))
+    # Liquid fill
+    liq_h = tube_h * liquid_frac
+    ax.add_patch(FancyBboxPatch(
+        (cx - tube_w / 2, y_base), tube_w, liq_h,
+        boxstyle="round,pad=0.005",
+        facecolor=liquid_color, edgecolor="none", alpha=0.55, zorder=4))
+    # Rim line at top
+    ax.plot([cx - tube_w / 2, cx + tube_w / 2],
+            [y_base + tube_h, y_base + tube_h],
+            color="#555", lw=0.8, zorder=5)
+    if label:
+        ax.text(cx, y_base - 0.025, label, ha="center", va="top",
+                fontsize=5.2, color="#444")
+
+
+def _draw_report(ax, cx, cy, w=0.18, h=0.22, color="#fdfefe",
+                 border="#555", label=None):
+    """Draw a document/report icon with folded top-right corner."""
+    from matplotlib.patches import Polygon
+    fold = w * 0.28
+    verts = [
+        (cx - w/2, cy - h/2),
+        (cx + w/2 - fold, cy - h/2),
+        (cx + w/2, cy - h/2 + fold),
+        (cx + w/2, cy + h/2),
+        (cx - w/2, cy + h/2),
+    ]
+    ax.add_patch(Polygon(verts, closed=True,
+                         facecolor=color, edgecolor=border, lw=0.7, zorder=3))
+    # Folded corner triangle
+    ax.add_patch(Polygon([
+        (cx + w/2 - fold, cy - h/2),
+        (cx + w/2, cy - h/2 + fold),
+        (cx + w/2 - fold, cy - h/2 + fold),
+    ], closed=True, facecolor="#d5dbdb", edgecolor=border, lw=0.5, zorder=4))
+    # Text lines inside
+    for i, frac in enumerate([0.62, 0.42, 0.22]):
+        line_w = w * (0.7 if i < 2 else 0.45)
+        ax.plot([cx - line_w/2, cx + line_w/2],
+                [cy - h/2 + h*frac, cy - h/2 + h*frac],
+                color="#aab7b8", lw=0.7, zorder=5)
+    if label:
+        ax.text(cx, cy - h/2 - 0.025, label, ha="center", va="top",
+                fontsize=5.2, color="#444")
+
+
+def _draw_reads(ax, cx, cy, w=0.22, h=0.18):
+    """Draw a stylised sequencing read-alignment block."""
+    import random
+    rng = np.random.default_rng(7)
+    nt_colors = ["#3498db", "#e74c3c", "#2ecc71", "#f39c12"]
+    nt_w, nt_h, gap = 0.018, 0.025, 0.003
+    n_cols = int(w / (nt_w + gap))
+    n_rows = int(h / (nt_h + gap))
+    for row in range(n_rows):
+        for col in range(n_cols):
+            x0 = cx - w/2 + col * (nt_w + gap)
+            y0 = cy - h/2 + row * (nt_h + gap)
+            c = nt_colors[rng.integers(0, 4)]
+            ax.add_patch(FancyBboxPatch(
+                (x0, y0), nt_w, nt_h,
+                boxstyle="round,pad=0.001",
+                facecolor=c, edgecolor="none", alpha=0.75, zorder=3))
+
+
+def _draw_alert(ax, cx, cy, r=0.09):
+    """Draw a red alert bell / warning icon."""
+    circle = plt.Circle((cx, cy), r,
+                         facecolor="#fadbd8", edgecolor="#c0392b",
+                         linewidth=1.2, zorder=3)
+    ax.add_patch(circle)
+    ax.text(cx, cy, "!", ha="center", va="center",
+            fontsize=14, color="#c0392b", fontweight="bold", zorder=5)
+
+
 def fig1_pipeline():
-    fig, ax = plt.subplots(figsize=(TWO_COL, 1.9))
+    """
+    Two-tier pipeline figure.
+
+    Top tier  : biological narrative — wastewater → sequencing → Kraken2 report
+    Bottom tier: ML pipeline — co-occurrence graph → SBM → novelty →
+                 risk scorer → CUSUM → alert dashboard
+    """
+    fig, ax = plt.subplots(figsize=(TWO_COL, 2.6))
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 1)
     ax.axis("off")
 
-    stages = [
-        ("Kraken2\nReports",   0.22, "#ecf0f1", "#7f8c8d", False),
-        ("Taxa\nFilter",       1.35, "#ecf0f1", "#7f8c8d", False),
-        ("Co-occurrence\nGraph", 2.60, "#dce8f5", "#2471a3", True),
-        ("SBM\nCommunity",     3.95, "#dce8f5", "#2471a3", True),
-        ("Novelty\nDetector",  5.20, "#dce8f5", "#2471a3", True),
-        ("Risk\nScorer",       6.45, "#fdebd0", "#ca6f1e", True),
-        ("CUSUM\n+ Trend",     7.65, "#fdebd0", "#ca6f1e", True),
-        ("ESMFold\nAlert",     8.85, "#fadbd8", "#c0392b", True),
+    # ── Top tier: biological story (y ≈ 0.62–0.96) ───────────────────────────
+    TOP_Y  = 0.79    # centre of top row
+    TUBE_BASE = 0.61
+
+    # 1. Wastewater sample test tubes
+    for i, (dx, liq) in enumerate([(-0.14, 0.45), (0.0, 0.62), (0.14, 0.35)]):
+        _draw_tube(ax, 0.72 + dx, TUBE_BASE,
+                   tube_h=0.20, liquid_frac=liq,
+                   liquid_color="#2471a3")
+    ax.text(0.72, TUBE_BASE - 0.025, "Wastewater\nsamples",
+            ha="center", va="top", fontsize=5.5, color="#444",
+            linespacing=1.2)
+
+    # Arrow: tubes → reads
+    ax.annotate("", xy=(1.72, TOP_Y), xytext=(1.08, TOP_Y),
+                arrowprops=dict(arrowstyle="-|>", color="#555",
+                                lw=0.9, mutation_scale=7), zorder=2)
+
+    # 2. Sequencing reads block
+    _draw_reads(ax, 2.10, TOP_Y, w=0.62, h=0.24)
+    ax.text(2.10, TUBE_BASE - 0.025, "Metagenomic\nsequencing",
+            ha="center", va="top", fontsize=5.5, color="#444",
+            linespacing=1.2)
+
+    # Arrow: reads → Kraken2 box
+    ax.annotate("", xy=(2.88, TOP_Y), xytext=(2.42, TOP_Y),
+                arrowprops=dict(arrowstyle="-|>", color="#555",
+                                lw=0.9, mutation_scale=7), zorder=2)
+
+    # 3. Kraken2 classifier box
+    kraken_box = FancyBboxPatch((2.90, TOP_Y - 0.14), 1.06, 0.28,
+                                boxstyle="round,pad=0.04",
+                                facecolor="#ecf0f1", edgecolor="#7f8c8d",
+                                linewidth=0.8, zorder=3)
+    ax.add_patch(kraken_box)
+    ax.text(3.43, TOP_Y + 0.04, "Kraken2", ha="center", va="center",
+            fontsize=6.5, fontweight="bold", color="#2c3e50", zorder=4)
+    ax.text(3.43, TOP_Y - 0.06, "Taxonomic\nclassifier", ha="center", va="center",
+            fontsize=5.2, color="#555", zorder=4, linespacing=1.1)
+
+    # Arrow: Kraken2 → report
+    ax.annotate("", xy=(4.60, TOP_Y), xytext=(3.96, TOP_Y),
+                arrowprops=dict(arrowstyle="-|>", color="#555",
+                                lw=0.9, mutation_scale=7), zorder=2)
+
+    # 4. Report document icon
+    _draw_report(ax, 4.90, TOP_Y, w=0.44, h=0.30,
+                 color="#fdfefe", border="#27ae60")
+    ax.text(4.90, TUBE_BASE - 0.025, ".report\nfile",
+            ha="center", va="top", fontsize=5.5, color="#444",
+            linespacing=1.2)
+
+    # Vertical arrow: report → PathogenIQ pipeline
+    ax.annotate("", xy=(4.90, 0.52), xytext=(4.90, TUBE_BASE - 0.01),
+                arrowprops=dict(arrowstyle="-|>", color="#27ae60",
+                                lw=1.2, mutation_scale=8), zorder=2)
+    ax.text(5.10, 0.565, "PathogenIQ\ningests", ha="left", va="center",
+            fontsize=5.0, color="#27ae60", style="italic")
+
+    # ── Top-tier label ────────────────────────────────────────────────────────
+    ax.text(0.05, 0.97, "Data acquisition", ha="left", va="top",
+            fontsize=6.0, color="#7f8c8d", style="italic")
+    ax.plot([0.05, 5.60], [0.96, 0.96], color="#ddd", lw=0.6)
+
+    # ── Bottom tier: ML pipeline (y ≈ 0.10–0.50) ─────────────────────────────
+    BOT_Y  = 0.30    # centre of bottom row
+    BOX_W  = 1.02
+    BOX_H  = 0.30
+    ARROW_STYLE = dict(arrowstyle="-|>", color="#555", lw=0.9, mutation_scale=7)
+
+    ml_stages = [
+        # (label_line1, label_line2, x_center, bg, border)
+        ("Co-occurrence",  "Graph",    1.35,  "#dce8f5", "#2471a3"),
+        ("SBM",           "Community", 2.75,  "#dce8f5", "#2471a3"),
+        ("Novelty",       "Detector",  4.15,  "#dce8f5", "#2471a3"),
+        ("Risk",          "Scorer",    5.55,  "#fdebd0", "#ca6f1e"),
+        ("CUSUM",         "+ Trend",   6.95,  "#fdebd0", "#ca6f1e"),
     ]
 
-    BOX_W, BOX_H = 0.95, 0.52
-    Y_CENTER = 0.60
-
-    for label, x, bg, border, is_ml in stages:
-        rect = FancyBboxPatch(
-            (x - BOX_W / 2, Y_CENTER - BOX_H / 2), BOX_W, BOX_H,
+    for l1, l2, xc, bg, border in ml_stages:
+        ax.add_patch(FancyBboxPatch(
+            (xc - BOX_W/2, BOT_Y - BOX_H/2), BOX_W, BOX_H,
             boxstyle="round,pad=0.04",
             facecolor=bg, edgecolor=border,
-            linewidth=1.2 if is_ml else 0.7,
-            zorder=3,
-        )
-        ax.add_patch(rect)
-        ax.text(x, Y_CENTER, label, ha="center", va="center",
-                fontsize=6.2, fontweight="bold" if is_ml else "normal",
-                color="#1a1a1a", zorder=4, linespacing=1.3)
+            linewidth=1.2, zorder=3))
+        ax.text(xc, BOT_Y + 0.04, l1, ha="center", va="center",
+                fontsize=6.5, fontweight="bold", color="#1a1a1a", zorder=4)
+        ax.text(xc, BOT_Y - 0.06, l2, ha="center", va="center",
+                fontsize=5.8, color="#444", zorder=4)
 
-    # Arrows between stages
-    for i in range(len(stages) - 1):
-        x0 = stages[i][1] + BOX_W / 2
-        x1 = stages[i + 1][1] - BOX_W / 2
-        ax.annotate("", xy=(x1, Y_CENTER), xytext=(x0, Y_CENTER),
-                    arrowprops=dict(arrowstyle="-|>", color="#555",
-                                    lw=0.9, mutation_scale=7),
-                    zorder=2)
+    # Arrows between ML stages
+    for i in range(len(ml_stages) - 1):
+        x0 = ml_stages[i][2] + BOX_W / 2
+        x1 = ml_stages[i + 1][2] - BOX_W / 2
+        ax.annotate("", xy=(x1, BOT_Y), xytext=(x0, BOT_Y),
+                    arrowprops=dict(**ARROW_STYLE), zorder=2)
 
-    # Legend
+    # Arrow to alert
+    x0 = ml_stages[-1][2] + BOX_W / 2
+    ax.annotate("", xy=(8.05, BOT_Y), xytext=(x0, BOT_Y),
+                arrowprops=dict(**ARROW_STYLE), zorder=2)
+
+    # Alert / dashboard box
+    ax.add_patch(FancyBboxPatch(
+        (8.08, BOT_Y - BOX_H/2), 1.20, BOX_H,
+        boxstyle="round,pad=0.04",
+        facecolor="#fadbd8", edgecolor="#c0392b",
+        linewidth=1.5, zorder=3))
+    _draw_alert(ax, 8.38, BOT_Y, r=0.07)
+    ax.text(8.90, BOT_Y + 0.04, "Alert /", ha="center", va="center",
+            fontsize=6.5, fontweight="bold", color="#c0392b", zorder=4)
+    ax.text(8.90, BOT_Y - 0.06, "Dashboard", ha="center", va="center",
+            fontsize=5.8, color="#c0392b", zorder=4)
+
+    # ── Bottom-tier label ─────────────────────────────────────────────────────
+    ax.text(0.05, 0.51, "PathogenIQ ML pipeline", ha="left", va="top",
+            fontsize=6.0, color="#7f8c8d", style="italic")
+    ax.plot([0.05, 9.60], [0.505, 0.505], color="#ddd", lw=0.6)
+
+    # ── Legend ────────────────────────────────────────────────────────────────
     ml_patch  = mpatches.Patch(facecolor="#dce8f5", edgecolor="#2471a3",
-                                linewidth=1.2, label="ML stage")
-    det_patch = mpatches.Patch(facecolor="#fdebd0", edgecolor="#ca6f1e",
-                                linewidth=1.2, label="Detection / scoring")
-    alr_patch = mpatches.Patch(facecolor="#fadbd8", edgecolor="#c0392b",
-                                linewidth=1.2, label="Alert / characterization")
-    ax.legend(handles=[ml_patch, det_patch, alr_patch],
-              loc="lower center", ncol=3,
-              bbox_to_anchor=(0.5, -0.04),
+                                linewidth=1.0, label="ML stage")
+    sc_patch  = mpatches.Patch(facecolor="#fdebd0", edgecolor="#ca6f1e",
+                                linewidth=1.0, label="Scoring / detection")
+    al_patch  = mpatches.Patch(facecolor="#fadbd8", edgecolor="#c0392b",
+                                linewidth=1.0, label="Alert / dashboard")
+    ax.legend(handles=[ml_patch, sc_patch, al_patch],
+              loc="lower right", ncol=3,
+              bbox_to_anchor=(0.99, 0.0),
               frameon=True, framealpha=0.9,
-              edgecolor="#bbb", fontsize=6.5)
+              edgecolor="#bbb", fontsize=6.0)
 
+    fig.tight_layout(pad=0.3)
     fig.savefig(FIG_DIR / "fig1_pipeline.pdf")
     fig.savefig(FIG_DIR / "fig1_pipeline.png")
     plt.close(fig)
-    print("  fig1_pipeline.pdf  ✓")
+    print("  fig1_pipeline.pdf  ✓  (visual two-tier layout)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
