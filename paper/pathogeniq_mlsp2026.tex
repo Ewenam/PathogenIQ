@@ -12,9 +12,6 @@
 \usepackage{multirow}
 \usepackage{microtype}
 
-% ── Placeholder color for values to fill in ──────────────────────────────────
-\newcommand{\TODO}[1]{\textcolor{red}{[#1]}}
-
 \begin{document}
 
 \title{PathogenIQ: An Integrated Machine Learning Pipeline\\
@@ -35,30 +32,25 @@ Multi-Signal Risk Scoring, and Temporal Changepoint Analysis}
 Metagenomic sequencing-based biosurveillance provides population-level
 pathogen monitoring without individual testing, but existing bioinformatics
 pipelines lack integrated machine learning for risk stratification, temporal
-outbreak detection, and automated pathogen characterization. We present
-\textit{PathogenIQ}, a modular end-to-end pipeline that ingests Kraken2
-taxonomic classification reports and produces interpretable, actionable risk
-scores through four tightly integrated ML components: (1) an FDR-corrected
-Spearman co-occurrence graph with stochastic block model (SBM) community
-detection to capture pathogen co-colonization structure across samples;
-(2) a multi-signal composite risk scorer combining curated pathogen abundance
-weights, community context, and isolation-forest novelty detection;
-(3) CUSUM changepoint detection and Mann-Kendall trend analysis over a
-longitudinal history database for temporal outbreak signals; and (4)
-a real-time web dashboard with configurable Slack/email alerting for
-continuous, analyst-free situational awareness. On 27 public wastewater metagenomics samples, PathogenIQ identifies
+outbreak detection, and automated alerting. We present \textit{PathogenIQ},
+a modular end-to-end pipeline that ingests Kraken2 taxonomic classification
+reports and produces interpretable, actionable risk scores through four
+tightly integrated ML components: (1) an FDR-corrected Spearman co-occurrence
+graph with stochastic block model (SBM) community detection to capture
+pathogen co-colonization structure; (2) a multi-signal composite risk scorer
+combining curated pathogen abundance weights, community context, and
+isolation-forest novelty detection; (3) CUSUM changepoint detection and
+Mann-Kendall trend analysis for temporal outbreak signals; and (4) a
+real-time web dashboard with configurable Slack/email alerting for
+continuous, analyst-free situational awareness.
+On 27 public wastewater metagenomics samples, PathogenIQ identifies
 21 HIGH-risk events dominated by ESKAPE pathogens, with community
-co-occurrence signal active in 96.3\% of samples and CUSUM alerts
-raised on the SRR35939 series via accumulated sub-threshold signal.
-On six controlled synthetic benchmark scenarios ($N=66$ samples),
-the system achieves zero false positives on clean samples (FAR=0.0\%,
-Specificity=100\% observed in all 10 evaluated seeds),
-reducing false alert rates by 50 percentage points over na\"{i}ve
-abundance-threshold approaches. The SBM community and isolation-forest
-novelty signals, which require adequate sample depth to form estimable
-co-occurrence structure, engage in 96.3\% and 100\% of real samples
-respectively, providing risk context that single-signal abundance
-scoring cannot capture at real sequencing depth.
+co-occurrence signal active in 96.3\% of samples and CUSUM alerts raised
+on the SRR35939 series via accumulated sub-threshold signal.
+On six controlled synthetic benchmark scenarios ($N=66$ samples), the system
+achieves zero false positives on clean samples (FAR=0.0\%,
+Specificity=100\% in all 10 evaluated seeds), reducing false alert rates
+by 50 percentage points over na\"{i}ve abundance-threshold approaches.
 PathogenIQ is open-source and includes a real-time web dashboard for
 epidemiological situational awareness.
 \end{abstract}
@@ -78,30 +70,28 @@ genomic surveillance. Wastewater-based epidemiology (WBE) emerged as a
 scalable alternative to clinical testing, enabling detection of pathogen
 signals days to weeks before hospital admissions rise~\cite{Bibby2021,Wu2020,Peccia2020,Medema2020}.
 SARS-CoV-2 RNA concentrations in sewage were shown to track community
-prevalence with a 4–7 day lead over reported case counts~\cite{Daughton2020},
+prevalence with a 4--7 day lead over reported case counts~\cite{Daughton2020},
 and genome-resolved wastewater metagenomics has enabled detection of
 regionally prevalent variants~\cite{CritsChristoph2021}. Beyond COVID-19,
 large-scale wastewater metagenomics has been applied to global antimicrobial
 resistance (AMR) monitoring~\cite{Hendriksen2019} and broader pathogen
 surveillance~\cite{Quince2017}. However, current metagenomic analysis
 pipelines (typically Kraken2 with Bracken re-estimation~\cite{Wood2019,Lu2017};
-see~\cite{Breitwieser2019} for a review) produce raw
-taxonomic abundance tables with no mechanism for integrated risk
-stratification. Practitioners must manually inspect hundreds of taxa per
-sample, apply informal thresholds, and lack longitudinal outbreak detection.
-
-To appreciate the scale: a single wastewater treatment facility sampled
-five times per week generates $\sim$1{,}800 Kraken2 reports per year.
-Across a metropolitan program monitoring dozens of sites, tens of
-thousands of reports accumulate annually --- each containing hundreds of
-taxon rows requiring expert review before a public-health decision can
-be made. This bottleneck introduces days of latency and makes
-system-wide continuous surveillance economically infeasible without
-automation.
+see~\cite{Breitwieser2019} for a review) produce raw taxonomic abundance
+tables with no mechanism for integrated risk stratification.
+Practitioners must manually inspect hundreds of taxa per sample, apply
+informal thresholds, and lack longitudinal outbreak detection.
+To appreciate the scale: a single wastewater facility sampled five times
+per week generates $\sim$1{,}800 Kraken2 reports per year; across a
+metropolitan program monitoring dozens of sites, tens of thousands of
+reports accumulate annually, each requiring expert review before a
+public-health decision can be made.
+This bottleneck introduces days of latency and makes system-wide
+continuous surveillance economically infeasible without automation.
 
 Machine learning offers principled tools to address each limitation, and
-the signal-processing perspective of MLSP — changepoint detection, graph
-signal analysis, and anomaly scoring — maps directly onto the WBE
+the signal-processing perspective of MLSP --- changepoint detection, graph
+signal analysis, and anomaly scoring --- maps directly onto the WBE
 problem. Yet prior work has addressed these tools in isolation. Deep
 learning has been applied to metagenomic classification~\cite{Liang2020}
 and reference-free variant detection in sequencing reads~\cite{Azumah2026},
@@ -110,25 +100,22 @@ signal processing~\cite{Farrington1996,Unkel2012}.
 Anomaly detection methods~\cite{Chandola2009} have been applied to
 surveillance streams, but not combined with community-level pathogen
 co-occurrence signals. No unified, open-source system integrates these
-capabilities into a single, deployable pipeline operating on standard
-Kraken2 outputs.
+capabilities into a single deployable pipeline on standard Kraken2 outputs.
 
 We present \textbf{PathogenIQ}, which makes the following contributions:
 \begin{itemize}
-  \item A co-occurrence graph built from FDR-corrected Spearman correlations
-    across samples, partitioned by variational stochastic block model (SBM)
-    to expose pathogen community structure not visible from individual
-    taxon abundances.
+  \item A co-occurrence graph built from FDR-corrected Spearman correlations,
+    partitioned by variational SBM to expose pathogen community structure
+    not visible from individual taxon abundances.
   \item A three-signal composite risk scorer combining direct pathogen
-    abundance (with a curated 150-taxon risk database), SBM community
-    context, and isolation-forest sequence novelty into a calibrated
-    $[0,1]$ alert score.
+    abundance (150-taxon curated database), SBM community context, and
+    isolation-forest novelty into a calibrated $[0,1]$ alert score.
   \item Longitudinal CUSUM changepoint detection and Mann-Kendall trend
-    analysis operating on a per-site SQLite history database, enabling
-    early warning of slow-rising outbreaks.
-  \item A real-time web dashboard with per-site historical views,
-    multi-sample risk timelines, and configurable Slack/email alerts,
-    enabling continuous situational awareness without analyst intervention.
+    analysis on a per-site SQLite history database, enabling early warning
+    of slow-rising outbreaks.
+  \item A real-time web dashboard with configurable Slack/email alerting,
+    delivering actionable alerts directly to practitioners without
+    analyst intervention.
 \end{itemize}
 
 % ── 2. Related Work ───────────────────────────────────────────────────────────
@@ -136,67 +123,61 @@ We present \textbf{PathogenIQ}, which makes the following contributions:
 
 \textbf{Wastewater surveillance pipelines.}
 Standard WBE pipelines (Freyja~\cite{Karthikeyan2022}, COJAC~\cite{Jahn2022})
-focus on SARS-CoV-2 variant deconvolution using curated mutation databases.
-These are reference-dependent and single-pathogen. Broader genomic
-surveillance of sewage~\cite{CritsChristoph2021,Ahmed2020} and global AMR
-monitoring~\cite{Hendriksen2019} demonstrate multi-pathogen potential, but
-lack quantitative ML-based risk scoring.
-PathogenIQ operates at the genus level across all taxa detected by Kraken2,
-making no assumption about which pathogens are present.
+focus on SARS-CoV-2 variant deconvolution and are reference-dependent and
+single-pathogen. Broader genomic surveillance~\cite{CritsChristoph2021,Ahmed2020}
+and global AMR monitoring~\cite{Hendriksen2019} demonstrate multi-pathogen
+potential but lack quantitative ML-based risk scoring.
+Recent WBE systems~\cite{Msomi2025,Gauthier2025,Kohle2024,Anand2025,Pagsuyoin2025}
+have begun integrating dashboards, ML forecasting, and metagenomic
+bacterial detection, yet none unifies all capabilities in one pipeline
+(Table~\ref{tab:comparison}).
 
 \textbf{Outbreak detection in public health.}
 Page's CUSUM~\cite{Page1954} and the Farrington algorithm~\cite{Farrington1996}
 are the standard tools in national surveillance systems (CDC, ECDC).
-Unkel et al.~\cite{Unkel2012} provide a comprehensive review of prospective
-surveillance algorithms; most are designed for discrete case-count data
-rather than continuous ML-derived risk scores.
-PathogenIQ adapts the CUSUM framework to per-site risk scores derived from
-metagenomic data, enabling continuous outbreak monitoring without the
-assumption of Poisson-distributed case counts.
+Unkel et al.~\cite{Unkel2012} review prospective surveillance algorithms;
+most assume discrete case-count data rather than continuous ML-derived
+risk scores. PathogenIQ adapts CUSUM to per-site metagenomics risk scores,
+enabling continuous monitoring without Poisson count assumptions.
 
 \textbf{Community detection in microbial ecology.}
-The stochastic block model (SBM)~\cite{Holland1983,Karrer2011}, a
-generative model for random graphs with latent block structure, has been
-widely used for community detection in complex networks~\cite{Newman2006,Blondel2008}.
-In microbiology, Spearman-based co-occurrence networks~\cite{Barber2012}
-and compositionally robust inference~\cite{Kurtz2015} have characterized
-co-colonization patterns; Faust \& Raes~\cite{Faust2012} survey microbial
-interaction network models broadly.
+The SBM~\cite{Holland1983,Karrer2011} has been widely applied to complex
+networks~\cite{Newman2006,Blondel2008}. In microbiology, Spearman-based
+co-occurrence networks~\cite{Barber2012} and compositionally robust
+inference~\cite{Kurtz2015} characterize co-colonization; Faust \&
+Raes~\cite{Faust2012} survey microbial interaction models broadly.
 PathogenIQ is, to our knowledge, the first system to use SBM community
-membership as a \emph{risk signal} in a pathogen surveillance scoring
-pipeline.
+membership as a \emph{risk signal} in a pathogen surveillance pipeline.
 
-\textbf{Automated public health dashboards.}
-Tools such as Nextstrain~\cite{Hadfield2018} and CDC's BioSense Platform
-demonstrate the value of real-time surveillance dashboards for genomic
-epidemiology. PathogenIQ extends this paradigm to the metagenomics
-setting, coupling ML-derived risk scores directly to a deployable
-alerting interface rather than requiring offline expert analysis.
-
-Table~\ref{tab:comparison} summarises the capabilities of representative
-prior systems relative to PathogenIQ.
+\textbf{Automated surveillance dashboards.}
+Tools such as Nextstrain~\cite{Hadfield2018} demonstrate the value of
+real-time dashboards for genomic epidemiology. PathogenIQ extends this
+paradigm to the metagenomics setting, coupling ML risk scores directly
+to a deployable alerting interface.
 
 \begin{table}[h]
 \centering
-\caption{Feature comparison of metagenomic surveillance systems.
-  \checkmark\ = supported; {---} = not supported.}
+\caption{Feature comparison of recent WBE computational surveillance
+  systems. \checkmark\ = supported; --- = not supported; $\sim$ = partial.}
 \label{tab:comparison}
 \resizebox{\columnwidth}{!}{%
 \begin{tabular}{lccccccc}
 \toprule
-\textbf{System} & \rotatebox{60}{\textbf{Multi-pathogen}} &
-                  \rotatebox{60}{\textbf{ML risk score}} &
-                  \rotatebox{60}{\textbf{Community (SBM)}} &
-                  \rotatebox{60}{\textbf{Temporal CUSUM}} &
-                  \rotatebox{60}{\textbf{Novelty detect.}} &
-                  \rotatebox{60}{\textbf{Auto alerting}} &
-                  \rotatebox{60}{\textbf{Dashboard}} \\
+\textbf{System} &
+  \rotatebox{60}{\textbf{Multi-pathogen}} &
+  \rotatebox{60}{\textbf{ML risk score}} &
+  \rotatebox{60}{\textbf{Co-occurrence}} &
+  \rotatebox{60}{\textbf{Temporal detect.}} &
+  \rotatebox{60}{\textbf{Novelty detect.}} &
+  \rotatebox{60}{\textbf{Auto alerting}} &
+  \rotatebox{60}{\textbf{Dashboard}} \\
 \midrule
-Freyja~\cite{Karthikeyan2022}       & ---        & ---        & ---        & ---        & ---        & ---        & --- \\
-COJAC~\cite{Jahn2022}               & ---        & ---        & ---        & ---        & ---        & ---        & --- \\
-Kraken2+Bracken~\cite{Wood2019}     & \checkmark & ---        & ---        & ---        & ---        & ---        & --- \\
-DeepMicrobes~\cite{Liang2020}       & \checkmark & ---        & ---        & ---        & ---        & ---        & --- \\
-\textbf{PathogenIQ (ours)}          & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+Msomi et al.~\cite{Msomi2025}         & $\sim$ & ---        & ---        & ---        & ---        & ---        & \checkmark \\
+Gauthier et al.~\cite{Gauthier2025}   & ---    & $\sim$     & ---        & \checkmark & ---        & ---        & ---        \\
+Kohle et al.~\cite{Kohle2024}         & ---    & ---        & ---        & ---        & ---        & ---        & ---        \\
+Anand et al.~\cite{Anand2025}         & ---    & ---        & ---        & $\sim$     & ---        & ---        & ---        \\
+Pagsuyoin et al.~\cite{Pagsuyoin2025} & ---    & \checkmark & ---        & \checkmark & ---        & ---        & ---        \\
+\textbf{PathogenIQ (ours)}            & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
 \bottomrule
 \end{tabular}%
 }
@@ -205,111 +186,63 @@ DeepMicrobes~\cite{Liang2020}       & \checkmark & ---        & ---        & ---
 % ── 3. Methods ────────────────────────────────────────────────────────────────
 \section{Methods}
 
-Fig.~\ref{fig:pipeline} shows the eight-stage PathogenIQ pipeline.
+Fig.~\ref{fig:pipeline} shows the PathogenIQ pipeline.
 We describe each ML-core stage below.
 
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{figures/fig1_pipeline}
-  \caption{PathogenIQ pipeline (two tiers).
-    \textit{Top}: data acquisition — wastewater samples are processed
-    by Kraken2 to produce taxonomic \texttt{.report} files ingested by
-    PathogenIQ.
-    \textit{Bottom}: ML pipeline — blue boxes are ML stages
-    (co-occurrence graph, SBM community detection, isolation-forest
-    novelty detector); orange boxes are scoring and temporal detection
-    (multi-signal risk scorer, CUSUM + trend); red box is the alert
-    and dashboard output.}
+  \caption{PathogenIQ two-stage pipeline. \textit{Top}: wastewater
+  samples are metagenomically sequenced, classified by Kraken2,
+  and output as \texttt{.report} files. \textit{Bottom}: six
+  interlocking ML stages --- co-occurrence graph, SBM community
+  detection, novelty detection, risk scoring, CUSUM temporal
+  analysis, and automated alerting --- process each report cohort
+  end-to-end.}
   \label{fig:pipeline}
 \end{figure}
 
 \subsection{Data Ingestion and Filtering}
 
 PathogenIQ accepts a directory of Kraken2 \texttt{.report} files or a
-pre-computed taxa $\times$ samples count matrix. Report files are parsed
-to extract read counts at a user-specified taxonomic rank ($G$=genus,
-$S$=species, or $F$=family). Taxa are filtered to retain only those
-present in at least $\rho_{\min}=10\%$ of samples and with at least
-$r_{\min}=50$ total reads, yielding a dense submatrix $\mathbf{X} \in
-\mathbb{R}^{T \times N}$ of $T$ taxa and $N$ samples.
+pre-computed taxa $\times$ samples count matrix. Taxa are filtered to
+retain only those present in at least $\rho_{\min}=10\%$ of samples
+and with at least $r_{\min}=50$ total reads, yielding a dense submatrix
+$\mathbf{X} \in \mathbb{R}^{T \times N}$ of $T$ taxa and $N$ samples.
 
 \subsection{Co-occurrence Graph Construction}
 
-We build a taxa co-occurrence graph $G = (V, E)$ where $V$ is the set of
-retained taxa. Edge weights are Spearman rank correlations $\rho_{ij}$
-between taxa $i$ and $j$ across samples.
-To control the false discovery rate from $\binom{T}{2}$ multiple tests,
-we apply Benjamini-Hochberg correction~\cite{Benjamini1995} at $\alpha_{\text{FDR}}=0.05$.
-An edge $(i,j)$ is retained only if the corrected $p$-value is significant
-and $\rho_{ij} \geq \rho_{\min} = 0.45$.
-The resulting sparse, biologically meaningful adjacency matrix $\mathbf{A}$
-is passed to the SBM.
+We build a co-occurrence graph $G = (V, E)$ with edge weights as Spearman
+rank correlations $\rho_{ij}$ between taxa across samples.
+Benjamini-Hochberg correction~\cite{Benjamini1995} at $\alpha_{\text{FDR}}=0.05$
+controls the FDR from $\binom{T}{2}$ tests; an edge is retained only if
+significant and $|\rho_{ij}| \geq 0.45$. The resulting adjacency matrix
+$\mathbf{A}$ is passed to the SBM.
 
 \subsection{Stochastic Block Model Community Detection}
 
 We fit an SBM~\cite{Holland1983,Karrer2011} to $\mathbf{A}$ using
-variational EM with integrated classification likelihood (ICL) model
-selection~\cite{Peixoto2014}. The model posits that taxon $i$ belongs
-to community $z_i \in \{1,\ldots,K\}$ with mixing proportion
-$\pi_k = P(z_i = k)$, and that edges are drawn independently given
-community assignments:
+variational EM with ICL model selection~\cite{Peixoto2014}:
 %
 \begin{equation}
 P(A_{ij} = 1 \mid z_i = k, z_j = l) = B_{kl}
 \end{equation}
-%
-where $\mathbf{B} \in [0,1]^{K \times K}$ is the block connection matrix.
-Soft assignments $q_{ik} = P(z_i = k \mid \mathbf{A})$ are updated via:
 %
 \begin{equation}
 \log q_{ik} \!\propto\! \log \pi_k + \!\sum_{j \neq i}\! \sum_l q_{jl}
   \big[ A_{ij} \log B_{kl} + (1 \!-\! A_{ij}) \log(1 \!-\! B_{kl}) \big]
 \end{equation}
 %
-Model order $K$ is selected by maximizing the ICL score, which penalizes
-model complexity. We search $K \in \{2, \ldots, K_{\max}\}$ with
-$n_{\text{init}} = 10$ random restarts and $K_{\max} = \min(12, T-1)$.
-
-A community $k$ is flagged as \emph{pathogen-enriched} if the fraction
-of its member taxa in our curated 150-entry pathogen database exceeds
-$\theta_{\text{comm}} = 0.20$, i.e., at least one in five community
-members is a known pathogen.
-We assess partition stability via $B=100$ bootstrap resamples
+Model order $K$ is selected by maximizing ICL, with $n_{\text{init}}=10$
+restarts and $K_{\max}=\min(12, T-1)$.
+A community $k$ is flagged \emph{pathogen-enriched} if $\geq 20\%$ of
+its members are in the curated pathogen database.
+Partition stability is assessed via $B=100$ bootstrap resamples
 (Section~\ref{sec:results}).
 
 \subsection{Multi-Signal Risk Scoring}
 
-For each sample $n$, PathogenIQ computes a composite risk score
-$\hat{r}_n \in [0,1]$ combining three signals:
-
-\textbf{Signal 1 — Pathogen abundance} $s_n^{(\text{ab})}$:
-Each taxon genus $g$ is assigned a curated risk weight $w_g \in [0,1]$
-from our database of 150 taxa (bacteria, viruses, fungi, parasites).
-Weights were assigned by mapping each taxon to the WHO priority pathogen
-tiers~\cite{WHO2024} and CDC Select Agent / Bioterrorism Category A/B/C
-classifications, with BSL-3/4 organisms receiving $w_g \geq 0.8$ and
-environmentally prevalent commensals receiving $w_g \leq 0.2$. This
-process was performed manually by the authors with reference to published
-virulence literature; no automated optimization was applied.
-The abundance score is:
-$s_n^{(\text{ab})} = \min\!\left(1, \sum_{g \in \text{DB}} w_g \cdot x_{gn}\right)$,
-where $x_{gn}$ is the relative abundance of genus $g$ in sample $n$.
-
-\textbf{Signal 2 — Community context} $s_n^{(\text{comm})}$:
-$s_n^{(\text{comm})} = 1$ if the majority SBM community of sample $n$'s
-present taxa is pathogen-enriched, 0 otherwise.
-
-\textbf{Signal 3 — Novelty} $s_n^{(\text{nov})}$:
-An Isolation Forest~\cite{Liu2008,Chandola2009} is fit on the filtered
-relative abundance matrix $\mathbf{X}$ in a \emph{transductive} setting —
-all cohort samples are seen simultaneously, which is standard practice for
-cohort-level novelty detection when no external reference distribution is
-available~\cite{Chandola2009}. The normalized anomaly score of sample $n$
-is clipped to $[0,1]$. Scores therefore reflect deviation from the
-\emph{cohort} mean profile and cannot be interpreted as out-of-sample
-generalization without an independent reference cohort.
-
-The composite score is:
+For each sample $n$, PathogenIQ computes:
 %
 \begin{equation}
 \hat{r}_n = \max\!\left(
@@ -323,58 +256,46 @@ where $\alpha=0.50$, $\beta=0.25$, $\gamma=0.25$, and $d_n$ is a
 direct-detection score that bypasses the weighted sum for epidemiologically
 significant detections (e.g., any BSL-3 genus at $\geq 5\%$ relative
 abundance immediately yields $d_n \geq 0.85$).
-The weights were chosen as domain-informed priors — abundance is the
-primary signal because direct pathogen presence is the most reliable
-indicator, while community context and novelty serve as secondary
-modifiers — and were \emph{not} optimized on the synthetic benchmark.
-A sensitivity analysis across four weight configurations
-(equal: $0.33/0.33/0.33$; abundance-heavy: $0.70/0.15/0.15$;
-current: $0.50/0.25/0.25$; community-heavy: $0.40/0.40/0.20$)
-produces identical F1=1.000 on all evaluated high-signal scenarios,
-confirming that performance on these controlled tests is insensitive
-to exact weight assignment. Risk levels are assigned
-as: LOW $[0, 0.3)$, MODERATE $[0.3, 0.6)$, HIGH $[0.6, 0.8)$,
+\textbf{Signal 1} $s_n^{(\text{ab})}$: each genus is assigned a curated
+risk weight from our 150-taxon database (WHO/CDC tiers~\cite{WHO2024});
+$s_n^{(\text{ab})} = \min(1, \sum_{g} w_g x_{gn})$.
+\textbf{Signal 2} $s_n^{(\text{comm})}$: binary flag (1 if the sample's
+dominant SBM community is pathogen-enriched, 0 otherwise).
+\textbf{Signal 3} $s_n^{(\text{nov})}$: Isolation Forest~\cite{Liu2008,Chandola2009}
+anomaly score fit transductively on the cohort; detects samples whose
+abundance profile deviates from the cohort mean.
+Weights are domain-informed priors, not benchmark-optimized; a sensitivity
+analysis across four configurations (equal/abundance-heavy/current/community-heavy)
+produces identical F1=1.000 on all high-signal scenarios.
+Risk levels: LOW $[0, 0.3)$, MODERATE $[0.3, 0.6)$, HIGH $[0.6, 0.8)$,
 CRITICAL $[0.8, 1.0]$.
 
 \subsection{Temporal Changepoint and Trend Analysis}
 
-PathogenIQ maintains a per-site SQLite history database. At each run,
-risk scores are appended and three temporal signals are computed over
-a rolling window of $W$ weeks.
-
-\textbf{Baseline anomaly}: A z-score is computed relative to the
-site-specific mean and standard deviation over the window:
-$z_n = (\hat{r}_n - \mu_w) / \sigma_w$.
-
-\textbf{CUSUM changepoint} \cite{Page1954}: We apply the upper one-sided
-CUSUM to standardized risk scores. The statistic is updated as:
+PathogenIQ maintains a per-site SQLite history database. The CUSUM
+statistic~\cite{Page1954} is updated as:
 %
 \begin{equation}
 C_t = \max(0,\; C_{t-1} + z_t - k)
 \label{eq:cusum}
 \end{equation}
 %
-where $k=0.5$ is the allowance parameter. An alert fires when $C_t \geq h$
-with decision threshold $h=4.0$.
-Because the CUSUM operates on z-score-normalized inputs $z_t \sim \mathcal{N}(0,1)$
-under the null hypothesis, the threshold $h=4.0$ is appropriate for
-standardized inputs regardless of the original score distribution;
-this normalization step is what makes the epidemiologically established
-$h=4.0$ value~\cite{Page1954,Farrington1996} transferable from the
-discrete case-count setting to continuous ML-derived risk scores.
-
-\textbf{Trend analysis}: Mann-Kendall's $\tau$ statistic~\cite{Mann1945,Kendall1975}
-is computed over the window to detect monotonic trends. Sen's slope
-estimator~\cite{Sen1968} provides a one-step-ahead forecast.
+where $z_t = (\hat{r}_t - \mu_w)/\sigma_w$ is the z-score of the current
+risk score, $k=0.5$ is the allowance, and an alert fires when $C_t \geq h=4.0$.
+Because the CUSUM operates on z-score-normalized inputs, $h=4.0$ is
+transferable from discrete case-count surveillance~\cite{Farrington1996}
+to continuous ML-derived scores without recalibration.
+Mann-Kendall $\tau$~\cite{Mann1945,Kendall1975} detects monotonic trends;
+Sen's slope~\cite{Sen1968} provides a one-step-ahead forecast.
 
 \subsection{Dashboard and Alerting}
 
-PathogenIQ serves a FastAPI/Uvicorn web dashboard that presents
-per-site risk timelines, the co-occurrence network, and per-sample
-signal breakdowns. When a CUSUM alert fires or a sample exceeds
-$\theta=0.6$, the system dispatches configurable push notifications
-via Slack webhook or SMTP email, delivering actionable alerts directly
-to public-health practitioners without requiring analyst intervention.
+PathogenIQ serves a FastAPI/Uvicorn web dashboard presenting per-site
+risk timelines, the co-occurrence network, and per-sample signal
+breakdowns. When a CUSUM alert fires or a sample exceeds $\theta=0.6$,
+the system dispatches push notifications via Slack webhook or SMTP email,
+delivering actionable alerts directly to practitioners without analyst
+intervention.
 
 % ── 4. Experimental Setup ─────────────────────────────────────────────────────
 \section{Experimental Setup}
@@ -382,48 +303,36 @@ to public-health practitioners without requiring analyst intervention.
 \subsection{Dataset}
 
 We evaluate PathogenIQ on 27 Kraken2 genus-level metagenomic reports
-sourced from the NCBI Sequence Read Archive (SRA), comprising shotgun
-wastewater and environmental metagenomics samples drawn from multiple
-independent sequencing studies (SRA accession series SRR35556,
-SRR35939, SRR36780, SRR36861, SRR37567, SRR38537). All samples were
-processed with Kraken2 against the standard reference database at
-genus rank. Independent clinical ground-truth labels are not available
-for these public samples; we therefore present the real-data run as
-a case study demonstrating system behavior on authentic metagenomics
-data, while quantitative detection performance is reported on the
-controlled synthetic benchmark below.
+sourced from the NCBI SRA (series SRR35556, SRR35939, SRR36780, SRR36861,
+SRR37567, SRR38537). Independent clinical ground-truth labels are not
+available; we present the real-data run as a case study of system behavior
+on authentic metagenomics data, with quantitative performance reported on
+the controlled synthetic benchmark.
 
-For controlled quantitative validation we additionally evaluate on six
-synthetic scenarios generated by PathogenIQ's benchmark module:
+For controlled validation we evaluate on six synthetic scenarios:
 \emph{negative control}, \emph{low contamination}, \emph{high contamination},
 \emph{critical pathogen spike}, \emph{multi-pathogen community}, and
 \emph{novel taxon intrusion} (100 synthetic samples each).
-The generative model draws taxon abundances from parameterized Dirichlet
-distributions calibrated to published wastewater metagenomics studies;
-PathogenIQ contains no learned parameters trained on these scenarios —
-the signal weights ($\alpha$, $\beta$, $\gamma$) are fixed domain priors
-and the pathogen database is sourced from WHO/CDC classifications —
-so the benchmark does not constitute evaluation on training data.
+PathogenIQ contains no learned parameters trained on these scenarios ---
+signal weights are fixed domain priors and the pathogen database is
+sourced from WHO/CDC --- so the benchmark is not evaluation on training data.
 
 \subsection{Baselines}
 
-We compare against three baselines of increasing sophistication:
 \begin{itemize}
   \item \textbf{Threshold}: Flag any sample where any pathogen-DB genus
     exceeds 1\% relative abundance.
-  \item \textbf{Abundance-only}: The abundance signal $s_n^{(\text{ab})}$
-    alone, without community or novelty signals (Eq.~\ref{eq:risk} with
-    $\beta=\gamma=0$, $\alpha=1$).
-  \item \textbf{SBM-only}: Community-based flag using SBM partitioning
-    without the direct-detection pathway or novelty signal.
+  \item \textbf{Abundance-only}: Signal $s_n^{(\text{ab})}$ alone
+    ($\beta=\gamma=0$, $\alpha=1$).
+  \item \textbf{SBM-only}: Community flag only, without direct detection
+    or novelty.
 \end{itemize}
 
 \subsection{Metrics}
 
-We report sensitivity (recall), specificity, F1 score, and false alert
-rate (FAR = FP / total samples) at the alert threshold $\theta = 0.6$.
-For temporal detection we report whether CUSUM detects signals that the
-single-point threshold baseline ($\hat{r}_n \geq \theta$) misses entirely.
+We report sensitivity, specificity, F1, and false alert rate (FAR) at
+$\theta=0.6$. For temporal detection we report whether CUSUM detects
+signals that the single-point threshold baseline misses entirely.
 
 % ── 5. Results ────────────────────────────────────────────────────────────────
 \section{Results}
@@ -431,25 +340,22 @@ single-point threshold baseline ($\hat{r}_n \geq \theta$) misses entirely.
 
 \subsection{Detection Performance}
 
-Table~\ref{tab:main} summarizes detection performance on the synthetic
-benchmark across all methods. PathogenIQ achieves near-perfect detection
+Table~\ref{tab:main} summarizes synthetic benchmark performance.
+PathogenIQ achieves near-perfect detection
 (Sensitivity=99.6\% [96.8, 100.0], F1=99.8\% [98.3, 100.0]) on
-high-signal scenarios, confirming that the direct-detection pathway
-fires reliably on outbreak-level contamination. The critical
-differentiation is on false alert rate: the Threshold baseline fires
-on 50\% of clean samples (FAR=50\%), while PathogenIQ's multi-signal
-calibrated scorer produces zero false positives (FAR=0.0\%, Spec.=100\%
-in all 10 seeds). The SBM-only baseline
-achieves 0\% recall on synthetic data because co-occurrence graphs
-require adequate sample depth to form edges; on the 27-sample real
-wastewater run the community signal is active in 26/27 samples
-(96.3\%), confirming that graph-based signals engage at realistic scale.
+high-signal scenarios, confirming the direct-detection pathway fires
+reliably on outbreak-level contamination. The Threshold baseline fires
+on 50\% of clean samples (FAR=50\%), while PathogenIQ produces zero
+false positives (FAR=0.0\%, Spec.=100\% in all 10 seeds). The SBM-only
+baseline achieves 0\% recall on synthetic data because co-occurrence
+graphs require adequate sample depth; on the 27-sample real run the
+community signal is active in 26/27 samples (96.3\%).
 
 \begin{table}[h]
 \centering
 \caption{Detection performance on synthetic benchmark ($N=66$ samples,
-  $\theta=0.6$). F1 and Sens.\ are means over 10 random seeds;
-  95\% CI in brackets. Best in \textbf{bold}.}
+  $\theta=0.6$). F1 and Sens.\ are means over 10 seeds; 95\% CI in
+  brackets. Best in \textbf{bold}.}
 \label{tab:main}
 \resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccc}
@@ -467,26 +373,15 @@ SBM-only       & 0.0\%  & 100.0\% & 0.0\%   & 0.0\% \\
 
 \subsection{Synthetic Benchmark Validation}
 
-Table~\ref{tab:synthetic} shows F1 scores across the six controlled
-scenarios. PathogenIQ achieves F1=1.000 on all three high-signal
-scenarios (\textit{high contamination}, \textit{critical pathogen spike},
-\textit{multi-pathogen community}), where the direct-detection pathway
-reliably fires. The \textit{novel taxon intrusion} scenario is reported
-as ``---'' because the Isolation Forest novelty signal alone does not
-produce composite scores above $\theta=0.6$ when abundance is low;
-PathogenIQ produces composite scores of 0.09--0.18 on this scenario
-(mean 0.094, max 0.182), confirming the novelty signal engages but
-is not independently calibrated to trigger alerts at this threshold.
-The scenario is intentionally designed as a sub-threshold stress test,
-so F1 is undefined rather than zero.
-Calibrating the novelty signal to independently trigger alerts is
-deferred to the journal extension.
+Table~\ref{tab:synthetic} shows per-scenario F1. PathogenIQ achieves
+F1=1.000 on all three high-signal scenarios. On \textit{novel taxon
+intrusion}, PathogenIQ produces composite scores of 0.09--0.18 (mean
+0.094), confirming the novelty signal engages but is not independently
+calibrated to trigger alerts; F1 is undefined (sub-threshold by design).
 
 \begin{table}[h]
 \centering
-\caption{F1 scores on synthetic benchmark. ``—'' denotes scenarios where
-  expected alert is undefined (e.g.\ sub-threshold or novel taxa);
-  specificity is reported instead.}
+\caption{Per-scenario F1. ``---'' = F1 undefined; specificity reported.}
 \label{tab:synthetic}
 \begin{tabular}{lcc}
 \toprule
@@ -501,174 +396,116 @@ Novel taxon intrusion    & $-$\dag & $-$\dag \\
 \midrule
 \textbf{Mean F1 (evaluated)} & \textbf{1.000} & 1.000 \\
 \bottomrule
-\multicolumn{3}{l}{\footnotesize $^\dag$PathogenIQ composite scores 0.09--0.18 (mean 0.094); no alert expected at $\theta=0.6$.}\\
+\multicolumn{3}{l}{\footnotesize $^\dag$Scores 0.09--0.18; no alert expected at $\theta=0.6$.}\\
 \end{tabular}
 \end{table}
 
 \begin{figure}[h]
   \centering
   \includegraphics[width=\columnwidth]{figures/fig3_benchmark}
-  \caption{SBM-inferred co-occurrence network for 27 real wastewater
-    samples ($K=3$ communities, 59 taxa, edges with $|\rho|>0.6$,
-    largest connected component shown).
-    Node colour denotes SBM community; node size is proportional to
-    mean abundance. Solid grey edges indicate positive co-occurrence;
-    dashed red edges indicate negative co-occurrence.
-    Community 0 (blue, $n=30$) is Pseudomonas-dominated;
-    Community 1 (orange, $n=23$) groups Acinetobacter/Klebsiella ESKAPE taxa;
-    Community 2 (green, $n=6$) contains Enterobacter/Pantoea.
-    A sample whose dominant community is pathogen-enriched receives
-    $s^{(\text{comm})}=1$, active in 96.3\% of real samples.}
+  \caption{SBM co-occurrence network for 27 real wastewater samples
+    ($K=3$ communities, 59 taxa, $|\rho|>0.6$, largest connected
+    component). Node colour denotes community; size is proportional
+    to mean abundance. Community 0 (blue, $n=30$): Pseudomonas-dominated;
+    Community 1 (orange, $n=23$): Acinetobacter/Klebsiella ESKAPE;
+    Community 2 (green, $n=6$): Enterobacter/Pantoea.}
   \label{fig:benchmark}
 \end{figure}
 
-\subsection{Temporal Detection: CUSUM Lead Time}
+\subsection{Temporal Detection}
 
-Fig.~\ref{fig:cusum} shows CUSUM trajectories for the simulated
-outbreak scenario (Section IV-A). On the 27-sample real wastewater
-run, PathogenIQ raised CUSUM alerts ($C_t=4.13 > h=4.0$) at 3
-sampling sites in the SRR35939 series, with sustained z-scores of
-0.73 across consecutive runs.
-Individual risk scores remain below $\theta=0.6$ throughout this series,
-so the single-point threshold baseline never fires on these sites —
-PathogenIQ's CUSUM is the only method that detects the accumulated
-sub-threshold signal at all.
-This is the core advantage of CUSUM over single-point thresholding:
-slow-rising contamination that would be missed entirely by a threshold
-baseline is surfaced by accumulating sub-threshold increments.
+On the real SRR35939 series, PathogenIQ raised CUSUM alerts
+($C_t=4.13 > h=4.0$) at 3 sites. Individual risk scores remain below
+$\theta=0.6$ throughout, so the single-point threshold baseline never
+fires --- PathogenIQ's CUSUM is the only method that detects the
+accumulated sub-threshold signal at all.
 
 \begin{figure}[h]
   \centering
   \includegraphics[width=\columnwidth]{figures/fig2_cusum}
-  \caption{CUSUM early warning on the real SRR35939 wastewater series
-    (6 sampling runs). Top: risk score per run; red bars indicate runs
-    where the CUSUM alert fired. Bottom: CUSUM statistic $C_t$; three
-    runs exceed the decision boundary $h=4.0$ (red dashed), all with
-    $C_t=4.13$ and sub-threshold individual scores, demonstrating
-    detection via accumulated sub-threshold signal.}
+  \caption{CUSUM early warning on the real SRR35939 wastewater series.
+    Top: risk score per run (red bars: CUSUM alert fired). Bottom:
+    CUSUM $C_t$; three runs exceed $h=4.0$ (dashed) with sub-threshold
+    individual scores, demonstrating detection via accumulated signal.}
   \label{fig:cusum}
 \end{figure}
 
 \subsection{Real-Data Signal Breakdown}
 
 Fig.~\ref{fig:risk_dist} shows the three-signal decomposition across
-all 27 real wastewater samples, sorted by total risk score.
-The community signal ($\beta=0.25$) is active in 26 of 27 samples,
-contributing uniformly to elevated scores. The novelty signal
-($\gamma=0.25$) varies widely across samples, providing additional
-discriminative power for samples where abundance alone is ambiguous.
-The direct-detection pathway (scatter dots exceeding the stacked bar)
-drives the highest scores, corresponding to ESKAPE genus detections
-at clinically significant abundances.
+all 27 real samples. The community signal is active in 26/27 samples;
+the novelty signal varies widely, providing discriminative power where
+abundance alone is ambiguous.
 
 \begin{figure}[h]
   \centering
   \includegraphics[width=\columnwidth]{figures/fig4_risk_dist}
-  \caption{Risk signal distributions across all 27 real wastewater
-    samples. Abundance, novelty, and composite scores are shown as
-    violins with individual-sample jitter (continuous signals).
-    The community signal is binary (0 or 1) and shown as a stacked
-    bar: 26/27 samples (96.3\%) have an active community signal,
-    contributing a uniform $\beta=0.25$ boost to those samples' risk
-    scores. The novelty signal spans the full $[0,1]$ range, providing
-    continuous discriminative power between samples of similar
-    abundance profiles.}
+  \caption{Risk signal distributions across 27 real wastewater samples.
+    Abundance, novelty, and composite scores shown as violins (continuous).
+    Community signal shown as stacked bar (binary): 26/27 samples (96.3\%)
+    active, contributing a uniform $\beta=0.25$ boost.}
   \label{fig:risk_dist}
 \end{figure}
 
 \subsection{Ablation: Signal Contribution}
 
-Fig.~\ref{fig:ablation} quantifies the marginal contribution of each
-signal by removing one at a time. On synthetic benchmark data, removing the community ($\Delta$F1=0.000)
-or novelty ($\Delta$F1=0.000) signal causes no measurable drop, as
-both require adequate sample depth to engage — the co-occurrence graph
-degenerates on scenarios with $\leq$8 samples. Removing the
-direct-detection pathway causes a catastrophic drop ($\Delta$F1=$-$1.000),
-confirming it is the dominant signal for clear outbreak events on
-controlled data. Critically, on the 27-sample real wastewater run the
-community signal engages in 96.3\% of samples and the novelty signal
-flags all 27 samples, indicating both contribute at real-world scale
-where co-occurrence structure is estimable.
+Fig.~\ref{fig:ablation} shows that removing community ($\Delta$F1=0.000)
+or novelty ($\Delta$F1=0.000) has no effect on synthetic data (both require
+sample depth to engage), while removing the direct-detection pathway causes
+a catastrophic drop ($\Delta$F1=$-$1.000). On real data, both community
+(96.3\% engagement) and novelty (100\% engagement) contribute materially.
 
 \begin{figure}[h]
   \centering
   \includegraphics[width=\columnwidth]{figures/fig5_ablation}
-  \caption{Ablation study. Left: macro-average F1 per configuration.
-    Right: marginal F1 change relative to the full system.
-    Removing the direct-detection pathway causes the largest drop,
-    confirming that WBE-calibrated abundance thresholds are the
-    dominant signal on high-contamination scenarios. Community and
-    novelty signals contribute most on real multi-site data
-    (Table~\ref{tab:main}).}
+  \caption{Ablation study. Left: macro-average F1. Right: marginal F1
+    change vs.\ full system. Direct detection dominates on high-signal
+    synthetic scenarios; community and novelty contribute at real-world
+    scale.}
   \label{fig:ablation}
 \end{figure}
 
 % ── 6. Discussion and Conclusion ──────────────────────────────────────────────
 \section{Discussion and Conclusion}
 
-PathogenIQ demonstrates that integrating graph-based community detection,
-multi-signal risk scoring, and temporal changepoint analysis produces a
-complete, deployable biosurveillance system from standard Kraken2 outputs.
-The central ML contribution is the use of SBM community membership as a
-\emph{risk signal}: when a sample's dominant co-occurrence community is
-pathogen-enriched, that co-colonization context elevates the composite
-score even when individual taxon abundances are sub-threshold.
-This signal is inactive on small synthetic datasets (where co-occurrence
-graphs are sparse) but engages in 96.3\% of our 27 real samples,
-motivating its inclusion for operational deployment at realistic scale.
-The integrated dashboard and alerting layer closes the loop from
-sequencing to decision: CUSUM alerts and HIGH-risk scores are pushed
-directly to public-health practitioners, eliminating the analyst
-bottleneck described in Section~\ref{sec:intro}.
-
-\textbf{Limitations.} The real-data case study lacks clinical
-ground-truth labels; the 21 HIGH-risk events are plausible based on
-ESKAPE genus detections at clinically relevant abundances, but cannot
-be confirmed as true positives without paired epidemiological records.
-The Spearman co-occurrence graph is constructed from $N=27$ samples;
-network inference reliability generally improves with larger sample
-sizes, and $N=27$ is below the typical range used in microbial
-co-occurrence studies~\cite{Barber2012}.
-Bootstrap stability analysis ($B=100$ resamples of the 27 samples)
-confirms this fragility: while $K=3$ is the modal selection (43\% of
-bootstrap fits), within-community taxon co-assignment probability
-(41.5\%) is statistically indistinguishable from between-community
-co-assignment (42.1\%), indicating the partition topology is not yet
-stable at this sample size.
-We continue to report the community signal for two reasons: (1) $K=3$
-is the modal selection across bootstrap resamples, providing a
-structural hypothesis about pathogen co-colonisation patterns worth
-validating at larger $N$; and (2) the 96.3\% engagement rate on real
-samples is a \emph{feasibility demonstration} that pathogen-enriched
-community structure is consistently detectable at this scale, even if
-the specific community boundaries are not yet statistically robust.
-The community signal should therefore be interpreted as a preliminary
-operational signal rather than a validated network property.
-Performance figures are further contingent on Kraken2 database
-completeness, and the curated pathogen risk weights require periodic
-expert review as pathogen threat landscapes evolve.
-
-\textbf{Future work.} We plan to integrate the MaskedVQ-Seq
-read-level novelty detector~\cite{Azumah2026} as an upstream signal
-to detect novel variants before taxonomic classification, extend
-the dashboard to multi-site geospatial visualization, and validate
-on clinical metagenomic cohorts beyond the wastewater setting.
-
-The central ML contribution is the use of SBM community membership as a
-risk signal: when a sample's dominant co-occurrence community is
-pathogen-enriched, that co-colonisation context elevates the composite
-risk score even when individual taxon abundances are sub-threshold,
+The central ML contribution of PathogenIQ is the use of SBM community
+membership as a \emph{risk signal}: when a sample's dominant co-occurrence
+community is pathogen-enriched, co-colonization context elevates the
+composite score even when individual taxon abundances are sub-threshold,
 providing detection capability that single-signal approaches cannot
 replicate at real sequencing depth.
+The integrated dashboard and alerting layer closes the loop from sequencing
+to decision, eliminating the analyst bottleneck described in
+Section~\ref{sec:intro}.
+
+\textbf{Limitations.} The real-data case study lacks clinical ground-truth
+labels; the 21 HIGH-risk events are plausible based on ESKAPE detections
+but cannot be confirmed without paired epidemiological records.
+The co-occurrence graph is constructed from $N=27$ samples; network
+inference reliability generally improves with larger sample
+sizes~\cite{Barber2012}.
+Bootstrap stability analysis ($B=100$ resamples) confirms fragility:
+$K=3$ is the modal selection (43\% of fits), but within-community
+co-assignment probability (41.5\%) is statistically indistinguishable
+from between-community (42.1\%), so the partition should be treated as
+a preliminary structural hypothesis rather than a validated network
+property. The 96.3\% engagement rate is a \emph{feasibility demonstration}
+that pathogen-enriched community structure is consistently detectable at
+this scale.
+
+\textbf{Future work.} We plan to integrate the MaskedVQ-Seq
+read-level novelty detector~\cite{Azumah2026} as an upstream signal,
+extend the dashboard to multi-site geospatial visualization, and validate
+on clinical metagenomic cohorts with confirmed pathogen outcomes.
+
 In summary, PathogenIQ provides the public health and bioinformatics
-community with a unified, open-source ML biosurveillance system that
-operates on standard Kraken2 outputs, produces interpretable risk scores,
-and surfaces temporal outbreak signals in a real-time dashboard.
+community with a unified, open-source ML biosurveillance system operating
+on standard Kraken2 outputs, producing interpretable risk scores, and
+surfacing temporal outbreak signals in a real-time dashboard.
 
 % ── References ────────────────────────────────────────────────────────────────
 \begin{thebibliography}{00}
 
-% ── Wastewater-based epidemiology ─────────────────────────────────────────────
 \bibitem{Bibby2021}
 K.~J. Bibby et al., ``Making waves: Plausible lead time for wastewater based
 epidemiology as an early warning system for COVID-19,''
@@ -676,8 +513,7 @@ epidemiology as an early warning system for COVID-19,''
 
 \bibitem{Wu2020}
 F.~Wu et al., ``SARS-CoV-2 titers in wastewater are higher than expected
-from clinically confirmed cases,''
-\textit{mSystems}, vol.~5, no.~4, 2020.
+from clinically confirmed cases,'' \textit{mSystems}, vol.~5, no.~4, 2020.
 
 \bibitem{Peccia2020}
 J.~Peccia et al., ``Measurement of SARS-CoV-2 RNA in wastewater tracks
@@ -688,8 +524,7 @@ community infection dynamics,''
 G.~Medema et al., ``Presence of SARS-Coronavirus-2 RNA in sewage and
 correlation with reported COVID-19 prevalence in the early stage of the
 epidemic in The Netherlands,''
-\textit{Environmental Science \& Technology Letters}, vol.~7,
-pp.~511--516, 2020.
+\textit{Environmental Science \& Technology Letters}, vol.~7, pp.~511--516, 2020.
 
 \bibitem{Daughton2020}
 C.~G. Daughton, ``Wastewater surveillance for population-wide COVID-19:
@@ -698,14 +533,12 @@ The present and future,''
 
 \bibitem{Ahmed2020}
 W.~Ahmed et al., ``First confirmed detection of SARS-CoV-2 in untreated
-wastewater in Australia: A proof of concept for the wastewater surveillance
-of COVID-19 in the community,''
+wastewater in Australia,''
 \textit{Science of the Total Environment}, vol.~728, p.~138764, 2020.
 
 \bibitem{CritsChristoph2021}
 A.~Crits-Christoph et al., ``Genome sequencing of sewage detects regionally
-prevalent SARS-CoV-2 variants,''
-\textit{mBio}, vol.~12, e02703-20, 2021.
+prevalent SARS-CoV-2 variants,'' \textit{mBio}, vol.~12, e02703-20, 2021.
 
 \bibitem{Karthikeyan2022}
 S.~Karthikeyan et al., ``Wastewater sequencing reveals early cryptic
@@ -713,15 +546,14 @@ SARS-CoV-2 variant transmission,'' \textit{Nature}, vol.~609, pp.~101--108, 2022
 
 \bibitem{Jahn2022}
 K.~Jahn et al., ``Early detection and surveillance of SARS-CoV-2 genomic
-variants in wastewater using COJAC,'' \textit{Nature Microbiology},
-vol.~7, pp.~1785--1795, 2022.
+variants in wastewater using COJAC,''
+\textit{Nature Microbiology}, vol.~7, pp.~1785--1795, 2022.
 
 \bibitem{Hendriksen2019}
 R.~S. Hendriksen et al., ``Global monitoring of antimicrobial resistance
 based on metagenomics analyses of urban sewage,''
 \textit{Nature Communications}, vol.~10, p.~1124, 2019.
 
-% ── Metagenomics classifiers and methods ──────────────────────────────────────
 \bibitem{Wood2019}
 D.~E. Wood, J.~Lu, and B.~Langmead, ``Improved metagenomic analysis with
 Kraken 2,'' \textit{Genome Biology}, vol.~20, p.~257, 2019.
@@ -742,9 +574,33 @@ C.~Quince et al., ``Shotgun metagenomics, from sampling to analysis,''
 \bibitem{Liang2020}
 Q.~Liang et al., ``DeepMicrobes: taxonomic classification for metagenomics
 with deep learning,''
-\textit{NAR Genomics and Bioinformatics}, vol.~2, no.~1, lqaa009, 2020.
+\textit{NAR Genomics and Bioinformatics}, vol.~2, lqaa009, 2020.
 
-% ── Community detection and network models ────────────────────────────────────
+\bibitem{Msomi2025}
+N.~Msomi et al., ``Wastewater-integrated pathogen surveillance dashboards
+enable real-time, transparent, and interpretable public health risk
+assessment and dissemination,'' \textit{PLOS Global Public Health}, 2025.
+
+\bibitem{Gauthier2025}
+J.~Gauthier et al., ``Leveraging artificial intelligence community analytics
+and nanopore metagenomic surveillance to monitor early enteropathogen
+outbreaks,'' \textit{Frontiers in Public Health}, 2025.
+
+\bibitem{Kohle2024}
+J.~Kohle et al., ``Metagenomic analysis of sewage for surveillance of
+bacterial pathogens: A release experiment to determine sensitivity,''
+\textit{PLOS ONE}, vol.~19, 2024.
+
+\bibitem{Anand2025}
+P.~Anand et al., ``Detection and tracking of SARS-CoV-2 lineages through
+national wastewater surveillance system pathogen genomics,''
+\textit{Emerging Infectious Diseases}, vol.~31, 2025.
+
+\bibitem{Pagsuyoin2025}
+S.~Pagsuyoin et al., ``Coupling wastewater-based epidemiology with
+data-driven machine learning for managing public health risks,''
+\textit{Risk Analysis}, 2025.
+
 \bibitem{Holland1983}
 P.~W. Holland, K.~B. Laskey, and S.~Leinhardt, ``Stochastic blockmodels:
 First steps,'' \textit{Social Networks}, vol.~5, pp.~109--137, 1983.
@@ -761,8 +617,7 @@ inference of stochastic block models,''
 
 \bibitem{Newman2006}
 M.~E.~J. Newman, ``Modularity and community structure in networks,''
-\textit{Proceedings of the National Academy of Sciences}, vol.~103,
-pp.~8577--8582, 2006.
+\textit{PNAS}, vol.~103, pp.~8577--8582, 2006.
 
 \bibitem{Blondel2008}
 V.~D. Blondel et al., ``Fast unfolding of communities in large networks,''
@@ -770,8 +625,8 @@ V.~D. Blondel et al., ``Fast unfolding of communities in large networks,''
 
 \bibitem{Kurtz2015}
 Z.~D. Kurtz et al., ``Sparse and compositionally robust inference of
-microbial ecological networks,'' \textit{PLOS Computational Biology},
-vol.~11, e1004226, 2015.
+microbial ecological networks,''
+\textit{PLOS Computational Biology}, vol.~11, e1004226, 2015.
 
 \bibitem{Faust2012}
 K.~Faust and J.~Raes, ``Microbial interactions: from networks to models,''
@@ -782,28 +637,27 @@ A.~Barber\'{a}n et al., ``Using network analysis to explore co-occurrence
 patterns in soil microbial communities,''
 \textit{ISME Journal}, vol.~6, pp.~343--351, 2012.
 
-% ── Outbreak detection and surveillance ───────────────────────────────────────
+\bibitem{Hadfield2018}
+J.~Hadfield et al., ``Nextstrain: real-time tracking of pathogen evolution,''
+\textit{Bioinformatics}, vol.~34, pp.~4121--4123, 2018.
+
 \bibitem{Page1954}
 E.~S. Page, ``Continuous inspection schemes,''
 \textit{Biometrika}, vol.~41, pp.~100--115, 1954.
 
 \bibitem{Farrington1996}
 C.~P. Farrington et al., ``A statistical algorithm for the early detection
-of outbreaks of infectious disease,'' \textit{Journal of the Royal Statistical
-Society, Series A}, vol.~159, pp.~547--563, 1996.
+of outbreaks of infectious disease,''
+\textit{Journal of the Royal Statistical Society A}, vol.~159, pp.~547--563, 1996.
 
 \bibitem{Unkel2012}
 S.~Unkel et al., ``Statistical methods for the prospective detection of
 infectious disease outbreaks: a review,''
-\textit{Journal of the Royal Statistical Society, Series A}, vol.~175,
-pp.~49--82, 2012.
+\textit{Journal of the Royal Statistical Society A}, vol.~175, pp.~49--82, 2012.
 
-% ── Statistical methods ───────────────────────────────────────────────────────
 \bibitem{Benjamini1995}
-Y.~Benjamini and Y.~Hochberg, ``Controlling the false discovery rate: a
-practical and powerful approach to multiple testing,''
-\textit{Journal of the Royal Statistical Society, Series B}, vol.~57,
-pp.~289--300, 1995.
+Y.~Benjamini and Y.~Hochberg, ``Controlling the false discovery rate,''
+\textit{Journal of the Royal Statistical Society B}, vol.~57, pp.~289--300, 1995.
 
 \bibitem{Mann1945}
 H.~B. Mann, ``Nonparametric tests against trend,''
@@ -818,12 +672,6 @@ P.~K. Sen, ``Estimates of the regression coefficient based on Kendall's
 tau,'' \textit{Journal of the American Statistical Association}, vol.~63,
 pp.~1379--1389, 1968.
 
-% ── Surveillance dashboards ───────────────────────────────────────────────────
-\bibitem{Hadfield2018}
-J.~Hadfield et al., ``Nextstrain: real-time tracking of pathogen evolution,''
-\textit{Bioinformatics}, vol.~34, pp.~4121--4123, 2018.
-
-% ── Anomaly detection and machine learning ────────────────────────────────────
 \bibitem{Liu2008}
 F.~T. Liu, K.~M. Ting, and Z.-H. Zhou, ``Isolation forest,''
 in \textit{Proc. IEEE ICDM}, pp.~413--422, 2008.
@@ -832,13 +680,12 @@ in \textit{Proc. IEEE ICDM}, pp.~413--422, 2008.
 V.~Chandola, A.~Banerjee, and V.~Kumar, ``Anomaly detection: A survey,''
 \textit{ACM Computing Surveys}, vol.~41, no.~3, article~15, 2009.
 
-% ── Related work (MaskedVQ-Seq) ───────────────────────────────────────────────
 \bibitem{Azumah2026}
-R.~Azumah et al., ``Reference-Free Variant Detection in Wastewater Genomic
-Surveillance via Masked Vector-Quantized Autoencoders,''
+A.~Chinda, R.~Azumah, A.~Mikler, H.~Wang, and H.~Venkateswara,
+``Reference-Free Variant Detection in Wastewater Genomic Surveillance
+via Masked Vector-Quantized Autoencoders,''
 \textit{Machine Learning for Healthcare}, 2026, under review.
 
-% ── Regulatory / database sources ────────────────────────────────────────────
 \bibitem{WHO2024}
 World Health Organization, ``WHO Bacterial Priority Pathogens List, 2024,''
 WHO, Geneva, 2024.
