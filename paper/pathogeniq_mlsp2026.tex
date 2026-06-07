@@ -90,9 +90,8 @@ This bottleneck introduces days of latency and makes system-wide
 continuous surveillance economically infeasible without automation.
 
 Machine learning offers principled tools to address each limitation, and
-the signal-processing perspective of MLSP --- changepoint detection, graph
-signal analysis, and anomaly scoring --- maps directly onto the WBE
-problem. Yet prior work has addressed these tools in isolation. Deep
+the signal-processing perspective of MLSP (changepoint detection, graph
+signal analysis, and anomaly scoring) maps directly onto the WBE problem. Yet prior work has addressed these tools in isolation. Deep
 learning has been applied to metagenomic classification~\cite{Liang2020}
 and reference-free variant detection in sequencing reads~\cite{Azumah2026},
 and statistical outbreak detection has a long history in public health
@@ -195,9 +194,9 @@ We describe each ML-core stage below.
   \caption{PathogenIQ two-stage pipeline. \textit{Top}: wastewater
   samples are metagenomically sequenced, classified by Kraken2,
   and output as \texttt{.report} files. \textit{Bottom}: six
-  interlocking ML stages --- co-occurrence graph, SBM community
+  interlocking ML stages (co-occurrence graph, SBM community
   detection, novelty detection, risk scoring, CUSUM temporal
-  analysis, and automated alerting --- process each report cohort
+  analysis, and automated alerting) process each report cohort
   end-to-end.}
   \label{fig:pipeline}
 \end{figure}
@@ -205,10 +204,14 @@ We describe each ML-core stage below.
 \subsection{Data Ingestion and Filtering}
 
 PathogenIQ accepts a directory of Kraken2 \texttt{.report} files or a
-pre-computed taxa $\times$ samples count matrix. Taxa are filtered to
-retain only those present in at least $\rho_{\min}=10\%$ of samples
-and with at least $r_{\min}=50$ total reads, yielding a dense submatrix
+pre-computed taxa $\times$ samples count matrix. Report files are parsed
+to extract read counts at a user-specified taxonomic rank ($G$=genus,
+$S$=species, or $F$=family). Taxa are filtered to retain only those
+present in at least $\rho_{\min}=10\%$ of samples and with at least
+$r_{\min}=50$ total reads, yielding a dense submatrix
 $\mathbf{X} \in \mathbb{R}^{T \times N}$ of $T$ taxa and $N$ samples.
+Relative abundances are computed column-wise and missing values are
+imputed with zero.
 
 \subsection{Co-occurrence Graph Construction}
 
@@ -256,19 +259,40 @@ where $\alpha=0.50$, $\beta=0.25$, $\gamma=0.25$, and $d_n$ is a
 direct-detection score that bypasses the weighted sum for epidemiologically
 significant detections (e.g., any BSL-3 genus at $\geq 5\%$ relative
 abundance immediately yields $d_n \geq 0.85$).
-\textbf{Signal 1} $s_n^{(\text{ab})}$: each genus is assigned a curated
-risk weight from our 150-taxon database (WHO/CDC tiers~\cite{WHO2024});
-$s_n^{(\text{ab})} = \min(1, \sum_{g} w_g x_{gn})$.
-\textbf{Signal 2} $s_n^{(\text{comm})}$: binary flag (1 if the sample's
-dominant SBM community is pathogen-enriched, 0 otherwise).
-\textbf{Signal 3} $s_n^{(\text{nov})}$: Isolation Forest~\cite{Liu2008,Chandola2009}
-anomaly score fit transductively on the cohort; detects samples whose
-abundance profile deviates from the cohort mean.
-Weights are domain-informed priors, not benchmark-optimized; a sensitivity
-analysis across four configurations (equal/abundance-heavy/current/community-heavy)
-produces identical F1=1.000 on all high-signal scenarios.
-Risk levels: LOW $[0, 0.3)$, MODERATE $[0.3, 0.6)$, HIGH $[0.6, 0.8)$,
-CRITICAL $[0.8, 1.0]$.
+\textbf{Signal 1 (Pathogen abundance)} $s_n^{(\text{ab})}$:
+Each taxon genus $g$ is assigned a curated risk weight $w_g \in [0,1]$
+from our database of 150 taxa (bacteria, viruses, fungi, parasites).
+Weights were assigned by mapping each taxon to WHO priority pathogen
+tiers~\cite{WHO2024} and CDC Select Agent classifications, with BSL-3/4
+organisms receiving $w_g \geq 0.8$ and environmental commensals
+receiving $w_g \leq 0.2$.
+The abundance score is $s_n^{(\text{ab})} = \min(1, \sum_{g} w_g x_{gn})$.
+
+\textbf{Signal 2 (Community context)} $s_n^{(\text{comm})}$:
+Binary flag equal to 1 if the majority SBM community of sample $n$'s
+present taxa is pathogen-enriched, and 0 otherwise.
+This signal captures co-colonisation risk that is invisible to
+single-taxon abundance scoring.
+
+\textbf{Signal 3 (Novelty)} $s_n^{(\text{nov})}$:
+An Isolation Forest~\cite{Liu2008,Chandola2009} is fit on $\mathbf{X}$
+in a \emph{transductive} setting so that all cohort samples are seen
+simultaneously, which is standard practice for cohort-level novelty
+detection when no external reference distribution is available.
+The normalized anomaly score is clipped to $[0,1]$ and reflects
+deviation from the cohort mean profile; it cannot be interpreted as
+out-of-sample generalization without an independent reference cohort.
+
+The weights $\alpha=0.50$, $\beta=0.25$, $\gamma=0.25$ are
+domain-informed priors: abundance is primary because direct pathogen
+presence is the most reliable indicator, while community context and
+novelty serve as secondary modifiers. A sensitivity analysis across
+four weight configurations (equal: 0.33/0.33/0.33; abundance-heavy:
+0.70/0.15/0.15; current: 0.50/0.25/0.25; community-heavy:
+0.40/0.40/0.20) produces identical F1=1.000 on all high-signal
+scenarios, confirming that performance is insensitive to exact weight
+assignment. Risk levels are: LOW $[0, 0.3)$, MODERATE $[0.3, 0.6)$,
+HIGH $[0.6, 0.8)$, CRITICAL $[0.8, 1.0]$.
 
 \subsection{Temporal Changepoint and Trend Analysis}
 
@@ -315,7 +339,7 @@ For controlled validation we evaluate on six synthetic scenarios:
 \emph{novel taxon intrusion} (100 synthetic samples each).
 PathogenIQ contains no learned parameters trained on these scenarios ---
 signal weights are fixed domain priors and the pathogen database is
-sourced from WHO/CDC --- so the benchmark is not evaluation on training data.
+sourced from WHO/CDC; the benchmark is therefore not evaluation on training data.
 
 \subsection{Baselines}
 
@@ -412,13 +436,19 @@ Novel taxon intrusion    & $-$\dag & $-$\dag \\
   \label{fig:benchmark}
 \end{figure}
 
-\subsection{Temporal Detection}
+\subsection{Temporal Detection: CUSUM Lead Time}
 
-On the real SRR35939 series, PathogenIQ raised CUSUM alerts
-($C_t=4.13 > h=4.0$) at 3 sites. Individual risk scores remain below
-$\theta=0.6$ throughout, so the single-point threshold baseline never
-fires --- PathogenIQ's CUSUM is the only method that detects the
-accumulated sub-threshold signal at all.
+Fig.~\ref{fig:cusum} shows the CUSUM trajectory on the real SRR35939
+wastewater series (6 sampling runs). PathogenIQ raised CUSUM alerts
+($C_t=4.13 > h=4.0$) at 3 sampling sites, with sustained z-scores of
+0.73 across consecutive runs. Individual risk scores remain below
+$\theta=0.6$ throughout this series, so the single-point threshold
+baseline never fires on these sites. PathogenIQ's CUSUM is the only
+method that detects the accumulated sub-threshold signal at all.
+This is the core advantage of CUSUM over single-point thresholding:
+slow-rising contamination that would be missed entirely is surfaced by
+accumulating sub-threshold increments into a statistically significant
+changepoint signal.
 
 \begin{figure}[h]
   \centering
@@ -433,9 +463,15 @@ accumulated sub-threshold signal at all.
 \subsection{Real-Data Signal Breakdown}
 
 Fig.~\ref{fig:risk_dist} shows the three-signal decomposition across
-all 27 real samples. The community signal is active in 26/27 samples;
-the novelty signal varies widely, providing discriminative power where
-abundance alone is ambiguous.
+all 27 real wastewater samples. The community signal ($\beta=0.25$)
+is active in 26 of 27 samples, contributing a uniform boost to elevated
+scores. The novelty signal ($\gamma=0.25$) varies continuously across
+samples, providing discriminative power for samples where abundance
+alone is ambiguous. The direct-detection pathway drives the highest
+composite scores, corresponding to ESKAPE genus detections at clinically
+significant abundances. The community signal is shown as a stacked bar
+rather than a violin because it is strictly binary (0 or 1); depicting
+it as a continuous distribution would misrepresent its nature.
 
 \begin{figure}[h]
   \centering
@@ -449,11 +485,18 @@ abundance alone is ambiguous.
 
 \subsection{Ablation: Signal Contribution}
 
-Fig.~\ref{fig:ablation} shows that removing community ($\Delta$F1=0.000)
-or novelty ($\Delta$F1=0.000) has no effect on synthetic data (both require
-sample depth to engage), while removing the direct-detection pathway causes
-a catastrophic drop ($\Delta$F1=$-$1.000). On real data, both community
-(96.3\% engagement) and novelty (100\% engagement) contribute materially.
+Fig.~\ref{fig:ablation} quantifies the marginal contribution of each
+signal by removing one at a time. On synthetic benchmark data, removing
+the community ($\Delta$F1=0.000) or novelty ($\Delta$F1=0.000) signal
+causes no measurable drop, as both require adequate sample depth to
+engage: the co-occurrence graph degenerates on scenarios with fewer
+than 8 samples. Removing the direct-detection pathway causes a
+catastrophic drop ($\Delta$F1=$-$1.000), confirming it is the dominant
+signal for clear outbreak events on controlled data. Critically, on the
+27-sample real wastewater run the community signal engages in 96.3\% of
+samples and the novelty signal flags all 27 samples, indicating both
+contribute materially at real-world scale where co-occurrence structure
+is estimable.
 
 \begin{figure}[h]
   \centering
@@ -479,19 +522,28 @@ to decision, eliminating the analyst bottleneck described in
 Section~\ref{sec:intro}.
 
 \textbf{Limitations.} The real-data case study lacks clinical ground-truth
-labels; the 21 HIGH-risk events are plausible based on ESKAPE detections
-but cannot be confirmed without paired epidemiological records.
-The co-occurrence graph is constructed from $N=27$ samples; network
-inference reliability generally improves with larger sample
-sizes~\cite{Barber2012}.
-Bootstrap stability analysis ($B=100$ resamples) confirms fragility:
-$K=3$ is the modal selection (43\% of fits), but within-community
-co-assignment probability (41.5\%) is statistically indistinguishable
-from between-community (42.1\%), so the partition should be treated as
-a preliminary structural hypothesis rather than a validated network
-property. The 96.3\% engagement rate is a \emph{feasibility demonstration}
-that pathogen-enriched community structure is consistently detectable at
+labels; the 21 HIGH-risk events are plausible based on ESKAPE genus
+detections at clinically relevant abundances, but cannot be confirmed
+as true positives without paired epidemiological records.
+The Spearman co-occurrence graph is constructed from $N=27$ samples;
+network inference reliability generally improves with larger sample
+sizes, and $N=27$ is below the typical range used in microbial
+co-occurrence studies~\cite{Barber2012}.
+Bootstrap stability analysis ($B=100$ resamples of the 27 samples)
+confirms this fragility: while $K=3$ is the modal selection (43\% of
+bootstrap fits), within-community taxon co-assignment probability
+(41.5\%) is statistically indistinguishable from between-community
+co-assignment (42.1\%), indicating the partition topology is not yet
+stable at this sample size. We continue to report the community signal
+for two reasons: (1) $K=3$ is the modal selection across bootstrap
+resamples, providing a structural hypothesis about pathogen
+co-colonisation patterns worth validating at larger $N$; and (2) the
+96.3\% engagement rate is a \emph{feasibility demonstration} that
+pathogen-enriched community structure is consistently detectable at
 this scale.
+Performance figures are further contingent on Kraken2 database
+completeness, and the curated risk weights require periodic expert
+review as pathogen threat landscapes evolve.
 
 \textbf{Future work.} We plan to integrate the MaskedVQ-Seq
 read-level novelty detector~\cite{Azumah2026} as an upstream signal,
