@@ -14,9 +14,7 @@
 
 \begin{document}
 
-\title{PathogenIQ: An Integrated Machine Learning Pipeline\\
-for Metagenomic Biosurveillance via Community Detection,\\
-Multi-Signal Risk Scoring, and Temporal Changepoint Analysis}
+\title{PathogenIQ: Machine Learning for Metagenomic Wastewater Surveillance}
 
 \author{
   \IEEEauthorblockN{Richmond Azumah\textsuperscript{1}}
@@ -225,11 +223,21 @@ $\mathbf{A}$ is passed to the SBM.
 \subsection{Stochastic Block Model Community Detection}
 
 We fit an SBM~\cite{Holland1983,Karrer2011} to $\mathbf{A}$ using
-variational EM with ICL model selection~\cite{Peixoto2014}:
+variational EM with ICL model selection~\cite{Peixoto2014}.
+The model posits that taxon $i$ belongs to community
+$z_i \in \{1,\ldots,K\}$ with mixing proportion $\pi_k = P(z_i=k)$,
+and that edges are drawn independently given community assignments:
 %
 \begin{equation}
 P(A_{ij} = 1 \mid z_i = k, z_j = l) = B_{kl}
 \end{equation}
+%
+where $A_{ij}$ is the $(i,j)$ entry of the adjacency matrix $\mathbf{A}$,
+$k$ and $l$ are community indices, and
+$\mathbf{B} \in [0,1]^{K \times K}$ is the block connection matrix
+whose entry $B_{kl}$ gives the edge probability between communities
+$k$ and $l$. Soft membership assignments
+$q_{ik} = P(z_i = k \mid \mathbf{A})$ are updated via:
 %
 \begin{equation}
 \log q_{ik} \!\propto\! \log \pi_k + \!\sum_{j \neq i}\! \sum_l q_{jl}
@@ -245,7 +253,10 @@ Partition stability is assessed via $B=100$ bootstrap resamples
 
 \subsection{Multi-Signal Risk Scoring}
 
-For each sample $n$, PathogenIQ computes:
+For each sample $n$, PathogenIQ combines three signals into a composite
+risk score $\hat{r}_n \in [0,1]$: a pathogen abundance score
+$s_n^{(\text{ab})}$, a community context flag $s_n^{(\text{comm})}$,
+and a novelty score $s_n^{(\text{nov})}$:
 %
 \begin{equation}
 \hat{r}_n = \max\!\left(
@@ -255,10 +266,10 @@ For each sample $n$, PathogenIQ computes:
 \label{eq:risk}
 \end{equation}
 %
-where $\alpha=0.50$, $\beta=0.25$, $\gamma=0.25$, and $d_n$ is a
-direct-detection score that bypasses the weighted sum for epidemiologically
-significant detections (e.g., any BSL-3 genus at $\geq 5\%$ relative
-abundance immediately yields $d_n \geq 0.85$).
+where $\alpha=0.50$, $\beta=0.25$, $\gamma=0.25$ are signal weights,
+and $d_n$ is a direct-detection score that bypasses the weighted sum
+for epidemiologically significant detections (e.g., any BSL-3 genus
+at $\geq 5\%$ relative abundance immediately yields $d_n \geq 0.85$).
 \textbf{Signal 1 (Pathogen abundance)} $s_n^{(\text{ab})}$:
 Each taxon genus $g$ is assigned a curated risk weight $w_g \in [0,1]$
 from our database of 150 taxa (bacteria, viruses, fungi, parasites).
@@ -296,16 +307,21 @@ HIGH $[0.6, 0.8)$, CRITICAL $[0.8, 1.0]$.
 
 \subsection{Temporal Changepoint and Trend Analysis}
 
-PathogenIQ maintains a per-site SQLite history database. The CUSUM
-statistic~\cite{Page1954} is updated as:
+PathogenIQ maintains a per-site SQLite history database. At each run,
+the risk score $\hat{r}_t$ is appended and the one-sided CUSUM
+statistic $C_t$~\cite{Page1954} is updated as:
 %
 \begin{equation}
 C_t = \max(0,\; C_{t-1} + z_t - k)
 \label{eq:cusum}
 \end{equation}
 %
-where $z_t = (\hat{r}_t - \mu_w)/\sigma_w$ is the z-score of the current
-risk score, $k=0.5$ is the allowance, and an alert fires when $C_t \geq h=4.0$.
+where $C_{t-1}$ is the statistic from the previous run,
+$z_t = (\hat{r}_t - \mu_w)/\sigma_w$ is the z-score of the current
+risk score relative to the site-specific rolling mean $\mu_w$ and
+standard deviation $\sigma_w$ over a window of $W$ weeks,
+$k=0.5$ is the allowance parameter that controls sensitivity, and
+an alert fires when $C_t \geq h=4.0$.
 Because the CUSUM operates on z-score-normalized inputs, $h=4.0$ is
 transferable from discrete case-count surveillance~\cite{Farrington1996}
 to continuous ML-derived scores without recalibration.
