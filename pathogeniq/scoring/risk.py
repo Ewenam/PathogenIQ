@@ -292,9 +292,16 @@ def score_all_samples(
     sbm_result=None,
     novelty_scores: dict[str, float] | None = None,
     alert_threshold: float = 0.6,
+    community_presence_fraction: float = 0.15,
 ) -> list[RiskScore]:
     """
     Score all samples in a SampleSet and return sorted risk scores (highest first).
+
+    community_presence_fraction: a sample's community signal fires if at least
+        this fraction of its present taxa belong to a pathogen-enriched SBM
+        community. Replaces the earlier majority-vote assignment, which was
+        biased toward background communities and prevented the signal from
+        firing on realistic samples.
     """
     pathogen_communities: set[int] = set()
     if sbm_result is not None:
@@ -306,19 +313,34 @@ def score_all_samples(
         rel_abund = sampleset.relative_abundance.get(name, pd.Series(dtype=float))
         novelty = (novelty_scores or {}).get(name, 0.0)
 
-        # Determine dominant community for this sample
+        # Determine the community context for this sample.
+        #
+        # NOTE: a previous version assigned each sample to its single
+        # *majority-vote* community over all present taxa. Because a typical
+        # sample contains many background commensals and only a few pathogens,
+        # the majority vote was almost always a (non-pathogen) background
+        # community, so the community signal could never fire even when the SBM
+        # had correctly isolated a pathogen-enriched community. We instead flag
+        # the community signal when a pathogen-enriched community is meaningfully
+        # represented among the taxa present in this sample. This is the
+        # epidemiologically correct semantics: a sample carrying members of a
+        # pathogen co-occurrence community warrants elevated context even if
+        # background taxa are more numerous.
         community_label = None
-        if sbm_result is not None:
-            # Assign community by majority vote of taxa present in this sample
+        if sbm_result is not None and pathogen_communities and sbm_result.taxa_names:
             present_taxa = rel_abund[rel_abund > 0].index.tolist()
-            if present_taxa and sbm_result.taxa_names:
-                taxon_to_idx = {t: i for i, t in enumerate(sbm_result.taxa_names)}
-                community_votes = [
-                    sbm_result.labels[taxon_to_idx[t]]
-                    for t in present_taxa if t in taxon_to_idx
-                ]
-                if community_votes:
-                    community_label = max(set(community_votes), key=community_votes.count)
+            taxon_to_idx = {t: i for i, t in enumerate(sbm_result.taxa_names)}
+            present_labels = [
+                sbm_result.labels[taxon_to_idx[t]]
+                for t in present_taxa if t in taxon_to_idx
+            ]
+            if present_labels:
+                frac_in_pathogen_comm = np.mean(
+                    [lbl in pathogen_communities for lbl in present_labels]
+                )
+                if frac_in_pathogen_comm >= community_presence_fraction:
+                    # Assign a pathogen community label so score_sample fires s_comm.
+                    community_label = next(iter(pathogen_communities))
 
         rs = score_sample(
             sample_name=name,

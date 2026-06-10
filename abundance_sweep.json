@@ -1,0 +1,88 @@
+{
+  "config": {
+    "pathogens": [
+      "Salmonella",
+      "Escherichia",
+      "Listeria",
+      "Shigella"
+    ],
+    "corr_strength": 0.9,
+    "n_samples": 30,
+    "n_seeds": 10,
+    "alert_threshold": 0.6,
+    "comm_presence_frac": 0.15,
+    "half_width": 0.005
+  },
+  "rows": [
+    {
+      "level": 0.01,
+      "abundance_only_alert_rate": 0.0,
+      "abundance_only_lo": 0.0,
+      "abundance_only_hi": 0.0,
+      "full_alert_rate": 0.0,
+      "full_lo": 0.0,
+      "full_hi": 0.0,
+      "community_gain": 0.0
+    },
+    {
+      "level": 0.02,
+      "abundance_only_alert_rate": 0.0,
+      "abundance_only_lo": 0.0,
+      "abundance_only_hi": 0.0,
+      "full_alert_rate": 0.0,
+      "full_lo": 0.0,
+      "full_hi": 0.0,
+      "community_gain": 0.0
+    },
+    {
+      "level": 0.03,
+      "abundance_only_alert_rate": 0.0,
+      "abundance_only_lo": 0.0,
+      "abundance_only_hi": 0.0,
+      "full_alert_rate": 0.0,
+      "full_lo": 0.0,
+      "full_hi": 0.0,
+      "community_gain": 0.0
+    },
+    {
+      "level": 0.04,
+      "abundance_only_alert_rate": 1.0,
+      "abundance_only_lo": 1.0,
+      "abundance_only_hi": 1.0,
+      "full_alert_rate": 1.0,
+      "full_lo": 1.0,
+      "full_hi": 1.0,
+      "community_gain": 0.0
+    },
+    {
+      "level": 0.05,
+      "abundance_only_alert_rate": 1.0,
+      "abundance_only_lo": 1.0,
+      "abundance_only_hi": 1.0,
+      "full_alert_rate": 1.0,
+      "full_lo": 1.0,
+      "full_hi": 1.0,
+      "community_gain": 0.0
+    },
+    {
+      "level": 0.065,
+      "abundance_only_alert_rate": 1.0,
+      "abundance_only_lo": 1.0,
+      "abundance_only_hi": 1.0,
+      "full_alert_rate": 1.0,
+      "full_lo": 1.0,
+      "full_hi": 1.0,
+      "community_gain": 0.0
+    },
+    {
+      "level": 0.08,
+      "abundance_only_alert_rate": 1.0,
+      "abundance_only_lo": 1.0,
+      "abundance_only_hi": 1.0,
+      "full_alert_rate": 1.0,
+      "full_lo": 1.0,
+      "full_hi": 1.0,
+      "community_gain": 0.0
+    }
+  ]
+}
