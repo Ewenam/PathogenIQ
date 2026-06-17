@@ -1,7 +1,12 @@
 """Tests for scoring/risk.py — risk scorer and alert thresholds."""
 import pytest
 import pandas as pd
-from pathogeniq.scoring.risk import score_sample, score_all_samples, _score_level
+from pathogeniq.scoring.risk import (
+    score_sample,
+    score_all_samples,
+    recalibrate_direct_detection,
+    _score_level,
+)
 
 
 def test_score_level_boundaries():
@@ -63,6 +68,50 @@ def test_score_all_samples(sampleset):
     # sample_b has Yersinia + Vibrio + Salmonella — should alert
     b = next(r for r in results if r.sample_name == "sample_b")
     assert b.score > 0.5
+
+
+def test_recalibrate_direct_detection_suppresses_endemic_load():
+    """
+    A site where every sample shares a similar multi-pathogen "load" (e.g.
+    endemic Pseudomonas + Streptococcus) should have the absolute
+    `load >= 0.10 -> direct = 0.62` override suppressed by
+    recalibrate_direct_detection, since it's the site's normal baseline
+    rather than an anomaly. A sample whose load is a clear outlier
+    relative to that baseline should retain the override.
+    """
+    baseline_taxa = pd.Series({
+        "Pseudomonas": 0.12,
+        "Streptococcus": 0.08,
+        "Caulobacter": 0.80,
+    })
+    outlier_taxa = pd.Series({
+        "Pseudomonas": 0.40,
+        "Streptococcus": 0.30,
+        "Caulobacter": 0.30,
+    })
+
+    scores = [score_sample(f"baseline_{i}", baseline_taxa) for i in range(5)]
+    scores.append(score_sample("outlier", outlier_taxa))
+
+    # Before recalibration, the absolute load rule saturates everything to HIGH.
+    assert all(s.level == "HIGH" for s in scores)
+    assert all(s.breakdown["direct_detection_score"] == 0.62 for s in scores)
+
+    recalibrated = recalibrate_direct_detection(scores)
+    by_name = {s.sample_name: s for s in recalibrated}
+
+    # Baseline samples: override suppressed, score falls back to composite_score.
+    for i in range(5):
+        s = by_name[f"baseline_{i}"]
+        assert s.breakdown["direct_detection_score_recal"] == 0.0
+        assert s.score == pytest.approx(s.breakdown["composite_score"])
+        assert s.level == "LOW"
+
+    # Outlier: load is a statistical anomaly (z >= 2) -> override retained.
+    out = by_name["outlier"]
+    assert out.breakdown["load_z"] >= 2.0
+    assert out.breakdown["direct_detection_score_recal"] == out.breakdown["direct_detection_score"]
+    assert out.level == "HIGH"
 
 
 def test_amr_annotations_populated(sampleset):

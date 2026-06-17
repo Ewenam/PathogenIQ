@@ -8,9 +8,9 @@ Run from the project root:
     python paper/generate_figures.py --report reports/report.json   # + real data overlay
 
 Outputs (all in paper/figures/):
-    fig1_pipeline.pdf       — architecture diagram
     fig2_cusum.pdf          — CUSUM temporal trace with lead-time annotation
-    fig3_benchmark.pdf      — per-scenario F1 bar chart
+    fig3_benchmark.pdf      — per-scenario F1 bar chart (synthetic-only fallback)
+    fig3_sbm_network.pdf    — K=2 SBM co-occurrence network (requires --report)
     fig4_risk_dist.pdf      — risk score distributions by scenario
     table_results.tex       — filled-in TODO replacements for the paper
 
@@ -32,10 +32,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import matplotlib.patheffects as pe
-from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
-from matplotlib.gridspec import GridSpec
 
 FIG_DIR = Path(__file__).parent / "figures"
 FIG_DIR.mkdir(exist_ok=True)
@@ -44,12 +41,12 @@ FIG_DIR.mkdir(exist_ok=True)
 plt.rcParams.update({
     "font.family":       "serif",
     "font.serif":        ["Times New Roman", "Times", "DejaVu Serif"],
-    "font.size":         8,
-    "axes.titlesize":    9,
-    "axes.labelsize":    8,
-    "xtick.labelsize":   7,
-    "ytick.labelsize":   7,
-    "legend.fontsize":   7,
+    "font.size":         13,
+    "axes.titlesize":    13,
+    "axes.labelsize":    13,
+    "xtick.labelsize":   11,
+    "ytick.labelsize":   11,
+    "legend.fontsize":   11,
     "lines.linewidth":   1.2,
     "axes.linewidth":    0.7,
     "grid.linewidth":    0.4,
@@ -77,247 +74,6 @@ COLORS = {
 
 ONE_COL = 3.487   # IEEE single column width (inches)
 TWO_COL = 7.22    # IEEE double column width (inches)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  FIGURE 1 — Pipeline Architecture
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _draw_tube(ax, cx, y_base, tube_h=0.18, tube_w=0.055,
-               liquid_frac=0.55, body_color="#d6eaf8",
-               liquid_color="#2471a3", label=None):
-    """Draw a stylised test tube (rectangle body + rounded bottom cap)."""
-    from matplotlib.patches import FancyBboxPatch, Ellipse
-    # Tube body
-    ax.add_patch(FancyBboxPatch(
-        (cx - tube_w / 2, y_base), tube_w, tube_h,
-        boxstyle="round,pad=0.005",
-        facecolor=body_color, edgecolor="#555", linewidth=0.6, zorder=3))
-    # Liquid fill
-    liq_h = tube_h * liquid_frac
-    ax.add_patch(FancyBboxPatch(
-        (cx - tube_w / 2, y_base), tube_w, liq_h,
-        boxstyle="round,pad=0.005",
-        facecolor=liquid_color, edgecolor="none", alpha=0.55, zorder=4))
-    # Rim line at top
-    ax.plot([cx - tube_w / 2, cx + tube_w / 2],
-            [y_base + tube_h, y_base + tube_h],
-            color="#555", lw=0.8, zorder=5)
-    if label:
-        ax.text(cx, y_base - 0.025, label, ha="center", va="top",
-                fontsize=5.2, color="#444")
-
-
-def _draw_report(ax, cx, cy, w=0.18, h=0.22, color="#fdfefe",
-                 border="#555", label=None):
-    """Draw a document/report icon with folded top-right corner."""
-    from matplotlib.patches import Polygon
-    fold = w * 0.28
-    verts = [
-        (cx - w/2, cy - h/2),
-        (cx + w/2 - fold, cy - h/2),
-        (cx + w/2, cy - h/2 + fold),
-        (cx + w/2, cy + h/2),
-        (cx - w/2, cy + h/2),
-    ]
-    ax.add_patch(Polygon(verts, closed=True,
-                         facecolor=color, edgecolor=border, lw=0.7, zorder=3))
-    # Folded corner triangle
-    ax.add_patch(Polygon([
-        (cx + w/2 - fold, cy - h/2),
-        (cx + w/2, cy - h/2 + fold),
-        (cx + w/2 - fold, cy - h/2 + fold),
-    ], closed=True, facecolor="#d5dbdb", edgecolor=border, lw=0.5, zorder=4))
-    # Text lines inside
-    for i, frac in enumerate([0.62, 0.42, 0.22]):
-        line_w = w * (0.7 if i < 2 else 0.45)
-        ax.plot([cx - line_w/2, cx + line_w/2],
-                [cy - h/2 + h*frac, cy - h/2 + h*frac],
-                color="#aab7b8", lw=0.7, zorder=5)
-    if label:
-        ax.text(cx, cy - h/2 - 0.025, label, ha="center", va="top",
-                fontsize=5.2, color="#444")
-
-
-def _draw_reads(ax, cx, cy, w=0.22, h=0.18):
-    """Draw a stylised sequencing read-alignment block."""
-    import random
-    rng = np.random.default_rng(7)
-    nt_colors = ["#3498db", "#e74c3c", "#2ecc71", "#f39c12"]
-    nt_w, nt_h, gap = 0.018, 0.025, 0.003
-    n_cols = int(w / (nt_w + gap))
-    n_rows = int(h / (nt_h + gap))
-    for row in range(n_rows):
-        for col in range(n_cols):
-            x0 = cx - w/2 + col * (nt_w + gap)
-            y0 = cy - h/2 + row * (nt_h + gap)
-            c = nt_colors[rng.integers(0, 4)]
-            ax.add_patch(FancyBboxPatch(
-                (x0, y0), nt_w, nt_h,
-                boxstyle="round,pad=0.001",
-                facecolor=c, edgecolor="none", alpha=0.75, zorder=3))
-
-
-def _draw_alert(ax, cx, cy, r=0.09):
-    """Draw a red alert bell / warning icon."""
-    circle = plt.Circle((cx, cy), r,
-                         facecolor="#fadbd8", edgecolor="#c0392b",
-                         linewidth=1.2, zorder=3)
-    ax.add_patch(circle)
-    ax.text(cx, cy, "!", ha="center", va="center",
-            fontsize=14, color="#c0392b", fontweight="bold", zorder=5)
-
-
-def fig1_pipeline():
-    """
-    Two-tier pipeline figure.
-
-    Top tier  : biological narrative — wastewater → sequencing → Kraken2 report
-    Bottom tier: ML pipeline — co-occurrence graph → SBM → novelty →
-                 risk scorer → CUSUM → alert dashboard
-    """
-    fig, ax = plt.subplots(figsize=(TWO_COL, 2.6))
-    ax.set_xlim(0, 10)
-    ax.set_ylim(0, 1)
-    ax.axis("off")
-
-    # ── Top tier: biological story (y ≈ 0.62–0.96) ───────────────────────────
-    TOP_Y  = 0.79    # centre of top row
-    TUBE_BASE = 0.61
-
-    # 1. Wastewater sample test tubes
-    for i, (dx, liq) in enumerate([(-0.14, 0.45), (0.0, 0.62), (0.14, 0.35)]):
-        _draw_tube(ax, 0.72 + dx, TUBE_BASE,
-                   tube_h=0.20, liquid_frac=liq,
-                   liquid_color="#2471a3")
-    ax.text(0.72, TUBE_BASE - 0.025, "Wastewater\nsamples",
-            ha="center", va="top", fontsize=5.5, color="#444",
-            linespacing=1.2)
-
-    # Arrow: tubes → reads
-    ax.annotate("", xy=(1.72, TOP_Y), xytext=(1.08, TOP_Y),
-                arrowprops=dict(arrowstyle="-|>", color="#555",
-                                lw=0.9, mutation_scale=7), zorder=2)
-
-    # 2. Sequencing reads block
-    _draw_reads(ax, 2.10, TOP_Y, w=0.62, h=0.24)
-    ax.text(2.10, TUBE_BASE - 0.025, "Metagenomic\nsequencing",
-            ha="center", va="top", fontsize=5.5, color="#444",
-            linespacing=1.2)
-
-    # Arrow: reads → Kraken2 box
-    ax.annotate("", xy=(2.88, TOP_Y), xytext=(2.42, TOP_Y),
-                arrowprops=dict(arrowstyle="-|>", color="#555",
-                                lw=0.9, mutation_scale=7), zorder=2)
-
-    # 3. Kraken2 classifier box
-    kraken_box = FancyBboxPatch((2.90, TOP_Y - 0.14), 1.06, 0.28,
-                                boxstyle="round,pad=0.04",
-                                facecolor="#ecf0f1", edgecolor="#7f8c8d",
-                                linewidth=0.8, zorder=3)
-    ax.add_patch(kraken_box)
-    ax.text(3.43, TOP_Y + 0.04, "Kraken2", ha="center", va="center",
-            fontsize=6.5, fontweight="bold", color="#2c3e50", zorder=4)
-    ax.text(3.43, TOP_Y - 0.06, "Taxonomic\nclassifier", ha="center", va="center",
-            fontsize=5.2, color="#555", zorder=4, linespacing=1.1)
-
-    # Arrow: Kraken2 → report
-    ax.annotate("", xy=(4.60, TOP_Y), xytext=(3.96, TOP_Y),
-                arrowprops=dict(arrowstyle="-|>", color="#555",
-                                lw=0.9, mutation_scale=7), zorder=2)
-
-    # 4. Report document icon
-    _draw_report(ax, 4.90, TOP_Y, w=0.44, h=0.30,
-                 color="#fdfefe", border="#27ae60")
-    ax.text(4.90, TUBE_BASE - 0.025, ".report\nfile",
-            ha="center", va="top", fontsize=5.5, color="#444",
-            linespacing=1.2)
-
-    # Vertical arrow: report → PathogenIQ pipeline
-    ax.annotate("", xy=(4.90, 0.52), xytext=(4.90, TUBE_BASE - 0.01),
-                arrowprops=dict(arrowstyle="-|>", color="#27ae60",
-                                lw=1.2, mutation_scale=8), zorder=2)
-    ax.text(5.10, 0.565, "PathogenIQ\ningests", ha="left", va="center",
-            fontsize=5.0, color="#27ae60", style="italic")
-
-    # ── Top-tier label ────────────────────────────────────────────────────────
-    ax.text(0.05, 0.97, "Data acquisition", ha="left", va="top",
-            fontsize=6.0, color="#7f8c8d", style="italic")
-    ax.plot([0.05, 5.60], [0.96, 0.96], color="#ddd", lw=0.6)
-
-    # ── Bottom tier: ML pipeline (y ≈ 0.10–0.50) ─────────────────────────────
-    BOT_Y  = 0.30    # centre of bottom row
-    BOX_W  = 1.02
-    BOX_H  = 0.30
-    ARROW_STYLE = dict(arrowstyle="-|>", color="#555", lw=0.9, mutation_scale=7)
-
-    ml_stages = [
-        # (label_line1, label_line2, x_center, bg, border)
-        ("Co-occurrence",  "Graph",    1.35,  "#dce8f5", "#2471a3"),
-        ("SBM",           "Community", 2.75,  "#dce8f5", "#2471a3"),
-        ("Novelty",       "Detector",  4.15,  "#dce8f5", "#2471a3"),
-        ("Risk",          "Scorer",    5.55,  "#fdebd0", "#ca6f1e"),
-        ("CUSUM",         "+ Trend",   6.95,  "#fdebd0", "#ca6f1e"),
-    ]
-
-    for l1, l2, xc, bg, border in ml_stages:
-        ax.add_patch(FancyBboxPatch(
-            (xc - BOX_W/2, BOT_Y - BOX_H/2), BOX_W, BOX_H,
-            boxstyle="round,pad=0.04",
-            facecolor=bg, edgecolor=border,
-            linewidth=1.2, zorder=3))
-        ax.text(xc, BOT_Y + 0.04, l1, ha="center", va="center",
-                fontsize=6.5, fontweight="bold", color="#1a1a1a", zorder=4)
-        ax.text(xc, BOT_Y - 0.06, l2, ha="center", va="center",
-                fontsize=5.8, color="#444", zorder=4)
-
-    # Arrows between ML stages
-    for i in range(len(ml_stages) - 1):
-        x0 = ml_stages[i][2] + BOX_W / 2
-        x1 = ml_stages[i + 1][2] - BOX_W / 2
-        ax.annotate("", xy=(x1, BOT_Y), xytext=(x0, BOT_Y),
-                    arrowprops=dict(**ARROW_STYLE), zorder=2)
-
-    # Arrow to alert
-    x0 = ml_stages[-1][2] + BOX_W / 2
-    ax.annotate("", xy=(8.05, BOT_Y), xytext=(x0, BOT_Y),
-                arrowprops=dict(**ARROW_STYLE), zorder=2)
-
-    # Alert / dashboard box
-    ax.add_patch(FancyBboxPatch(
-        (8.08, BOT_Y - BOX_H/2), 1.20, BOX_H,
-        boxstyle="round,pad=0.04",
-        facecolor="#fadbd8", edgecolor="#c0392b",
-        linewidth=1.5, zorder=3))
-    _draw_alert(ax, 8.38, BOT_Y, r=0.07)
-    ax.text(8.90, BOT_Y + 0.04, "Alert /", ha="center", va="center",
-            fontsize=6.5, fontweight="bold", color="#c0392b", zorder=4)
-    ax.text(8.90, BOT_Y - 0.06, "Dashboard", ha="center", va="center",
-            fontsize=5.8, color="#c0392b", zorder=4)
-
-    # ── Bottom-tier label ─────────────────────────────────────────────────────
-    ax.text(0.05, 0.51, "PathogenIQ ML pipeline", ha="left", va="top",
-            fontsize=6.0, color="#7f8c8d", style="italic")
-    ax.plot([0.05, 9.60], [0.505, 0.505], color="#ddd", lw=0.6)
-
-    # ── Legend ────────────────────────────────────────────────────────────────
-    ml_patch  = mpatches.Patch(facecolor="#dce8f5", edgecolor="#2471a3",
-                                linewidth=1.0, label="ML stage")
-    sc_patch  = mpatches.Patch(facecolor="#fdebd0", edgecolor="#ca6f1e",
-                                linewidth=1.0, label="Scoring / detection")
-    al_patch  = mpatches.Patch(facecolor="#fadbd8", edgecolor="#c0392b",
-                                linewidth=1.0, label="Alert / dashboard")
-    ax.legend(handles=[ml_patch, sc_patch, al_patch],
-              loc="lower right", ncol=3,
-              bbox_to_anchor=(0.99, 0.0),
-              frameon=True, framealpha=0.9,
-              edgecolor="#bbb", fontsize=6.0)
-
-    fig.tight_layout(pad=0.3)
-    fig.savefig(FIG_DIR / "fig1_pipeline.pdf")
-    fig.savefig(FIG_DIR / "fig1_pipeline.png")
-    plt.close(fig)
-    print("  fig1_pipeline.pdf  ✓  (visual two-tier layout)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -611,20 +367,15 @@ def fig3_benchmark(results: dict):
 #  FIGURE 3 (REAL) — SBM co-occurrence network (standalone)
 # ══════════════════════════════════════════════════════════════════════════════
 
-COMM_COLORS = {0: "#2471a3", 1: "#e07b39", 2: "#27ae60"}
-COMM_LABELS = {
-    0: "Community 0 ($n$=30, Pseudomonas-dominated)",
-    1: "Community 1 ($n$=23, Acinetobacter/Klebsiella)",
-    2: "Community 2 ($n$=6, Enterobacter/Pantoea)",
-}
-
-
 def fig3_sbm_network(report_data: dict):
     """
-    Standalone SBM co-occurrence network figure.
-    Nodes coloured by SBM community; size proportional to mean abundance.
-    Solid edges = positive co-occurrence, dashed red = negative.
-    No node labels — community identity is conveyed by colour and legend.
+    Force-directed (Fruchterman-Reingold) layout of the real-data
+    co-occurrence network: taxa connected by at least one
+    FDR-significant Spearman edge (|rho|>=0.45, BH-corrected
+    alpha=0.05), colour-coded by SBM community membership (K=2).
+    Solid grey edges = positive co-occurrence, dashed red = negative.
+    Node size ~ sqrt(mean abundance). Isolated taxa (no significant
+    edges) are omitted from the layout and noted in the caption.
     """
     try:
         import networkx as nx
@@ -634,62 +385,161 @@ def fig3_sbm_network(report_data: dict):
 
     nodes = report_data["network"]["nodes"]
     edges = report_data["network"]["edges"]
+    n_total_taxa = len(nodes)
+    n_samples = len(report_data.get("samples", []))
 
-    RHO_VIZ = 0.6
+    max_ab = max(n.get("mean_abundance", 0.0) for n in nodes)
+
+    def node_size(ab):
+        return 30 + 220 * (ab / max_ab) ** 0.5
 
     G = nx.Graph()
     for n in nodes:
         G.add_node(n["id"], community=n["community"],
                    mean_abundance=n.get("mean_abundance", 0.0))
     for e in edges:
-        if abs(e["rho"]) > RHO_VIZ:
-            G.add_edge(e["source"], e["target"], rho=e["rho"])
+        G.add_edge(e["source"], e["target"], rho=e["rho"], weight=abs(e["rho"]))
 
-    largest_cc = max(nx.connected_components(G), key=len)
-    G = G.subgraph(largest_cc).copy()
+    connected = [n_id for n_id in G.nodes() if G.degree(n_id) > 0]
+    H = G.subgraph(connected)
+    n_isolated = n_total_taxa - len(connected)
 
-    pos = nx.spring_layout(G, seed=42, k=0.85 / max(len(G) ** 0.5, 1), iterations=200)
+    total_by_community = {0: 0, 1: 0}
+    for n in nodes:
+        total_by_community[n["community"]] += 1
+    connected_by_community = {0: [], 1: []}
+    for n_id in connected:
+        connected_by_community[H.nodes[n_id]["community"]].append(n_id)
 
-    fig, ax = plt.subplots(figsize=(ONE_COL * 1.85, 2.6))
+    # The smaller community is drawn in the foreground/highlight colour.
+    small_comm, large_comm = (0, 1) if total_by_community[0] <= total_by_community[1] else (1, 0)
+    small_ids, large_ids = connected_by_community[small_comm], connected_by_community[large_comm]
 
-    node_list   = list(G.nodes())
-    node_colors = [COMM_COLORS.get(G.nodes[n]["community"], "#888") for n in node_list]
-    node_sizes  = [max(18, min(140, G.nodes[n]["mean_abundance"] * 4e5))
-                   for n in node_list]
+    # Force-directed layout over the connected subgraph only (isolated
+    # taxa with no significant edges are omitted). Each connected
+    # component is laid out independently (so small components aren't
+    # squeezed by the large one) and then placed in a grid: the largest
+    # component spans the top, the remaining small components form a
+    # row below it. Positions are finally rescaled to [-1, 1]^2.
+    comps = sorted(nx.connected_components(H), key=len, reverse=True)
+    pos: dict = {}
+    if len(comps) == 1:
+        pos = nx.spring_layout(H, seed=10, k=0.7, iterations=300, weight="weight")
+    else:
+        largest, rest = comps[0], comps[1:]
+        boxes = [(0.0, 10.0, 3.2, 10.0)]
+        w = 10.0 / len(rest)
+        for i in range(len(rest)):
+            boxes.append((i * w, (i + 1) * w, 0.0, 2.2))
+        for comp, (x0, x1, y0, y1) in zip([largest] + rest, boxes):
+            sub = H.subgraph(comp)
+            n_sub = len(comp)
+            if n_sub == 1:
+                sub_pos = {next(iter(comp)): np.array([0.5, 0.5])}
+            else:
+                k = 1.8 / (n_sub ** 0.5)
+                sub_pos = nx.spring_layout(sub, seed=10, k=k, iterations=300,
+                                            weight="weight")
+            xs = [p[0] for p in sub_pos.values()]
+            ys = [p[1] for p in sub_pos.values()]
+            xr = (max(xs) - min(xs)) or 1.0
+            yr = (max(ys) - min(ys)) or 1.0
+            xmin, ymin = min(xs), min(ys)
+            for node, (x, y) in sub_pos.items():
+                pos[node] = np.array([
+                    x0 + (x - xmin) / xr * (x1 - x0),
+                    y0 + (y - ymin) / yr * (y1 - y0),
+                ])
+    all_x = [p[0] for p in pos.values()]
+    all_y = [p[1] for p in pos.values()]
+    xr = (max(all_x) - min(all_x)) or 1.0
+    yr = (max(all_y) - min(all_y)) or 1.0
+    xmin, ymin = min(all_x), min(all_y)
+    pos = {n_id: np.array([(p[0] - xmin) / xr * 2 - 1, (p[1] - ymin) / yr * 2 - 1])
+           for n_id, p in pos.items()}
 
-    pos_edges = [(u, v) for u, v, d in G.edges(data=True) if d["rho"] > 0]
-    neg_edges = [(u, v) for u, v, d in G.edges(data=True) if d["rho"] < 0]
+    # ── Draw ─────────────────────────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(ONE_COL * 2.1, ONE_COL * 2.1))
 
-    nx.draw_networkx_edges(G, pos, edgelist=pos_edges, ax=ax,
-                           edge_color="#bbb", alpha=0.28, width=0.45)
-    nx.draw_networkx_edges(G, pos, edgelist=neg_edges, ax=ax,
-                           edge_color="#e74c3c", alpha=0.20, width=0.45,
+    nx.draw_networkx_nodes(H, pos, nodelist=large_ids, ax=ax,
+                           node_color=COLORS["baseline1"],
+                           node_size=[node_size(H.nodes[n]["mean_abundance"]) for n in large_ids],
+                           alpha=0.8, linewidths=0.4, edgecolors="white")
+
+    pos_edges = [(u, v) for u, v, d in H.edges(data=True) if d["rho"] > 0]
+    neg_edges = [(u, v) for u, v, d in H.edges(data=True) if d["rho"] < 0]
+    nx.draw_networkx_edges(H, pos, edgelist=pos_edges, ax=ax,
+                           edge_color="#888", alpha=0.85, width=1.0)
+    nx.draw_networkx_edges(H, pos, edgelist=neg_edges, ax=ax,
+                           edge_color="#e74c3c", alpha=0.85, width=1.0,
                            style="dashed")
-    nx.draw_networkx_nodes(G, pos, nodelist=node_list, ax=ax,
-                           node_color=node_colors, node_size=node_sizes,
-                           alpha=0.88, linewidths=0.5, edgecolors="white")
 
-    comm_patches = [mpatches.Patch(color=COMM_COLORS[k], label=COMM_LABELS[k],
-                                   alpha=0.88) for k in sorted(COMM_COLORS)]
-    pos_line = plt.Line2D([0], [0], color="#999", linewidth=0.8, label="Positive co-occ.")
-    neg_line = plt.Line2D([0], [0], color="#e74c3c", linewidth=0.8,
+    nx.draw_networkx_nodes(H, pos, nodelist=small_ids, ax=ax,
+                           node_color=COLORS["pathogeniq"],
+                           node_size=[node_size(H.nodes[n]["mean_abundance"]) for n in small_ids],
+                           alpha=0.95, linewidths=0.6, edgecolors="white")
+
+    # Labels: every connected taxon. Each label is offset away from its
+    # neighbour(s) — for degree>=2 nodes, perpendicular to the line
+    # through the first two neighbours; for degree-1 (leaf) nodes, away
+    # from the single neighbour. Horizontal/vertical alignment follows
+    # the dominant offset axis so the text extends away from the node
+    # rather than centring on top of it.
+    for n_id in H.nodes():
+        x, y = pos[n_id]
+        neighbors = list(H.neighbors(n_id))
+        if len(neighbors) >= 2:
+            p0, p1 = pos[neighbors[0]], pos[neighbors[1]]
+            dx, dy = -(p1[1] - p0[1]), (p1[0] - p0[0])
+            if dy < 0:
+                dx, dy = -dx, -dy
+        else:
+            nbr = pos[neighbors[0]]
+            dx, dy = x - nbr[0], y - nbr[1]
+        norm = (dx * dx + dy * dy) ** 0.5
+        if norm < 1e-8:
+            dx, dy, norm = 0.0, 1.0, 1.0
+        sz = node_size(H.nodes[n_id]["mean_abundance"])
+        off = 0.025 + 0.0003 * sz
+        lx, ly = x + dx / norm * off, y + dy / norm * off
+        if abs(dx) > abs(dy):
+            ha, va = ("left" if dx > 0 else "right"), "center"
+        else:
+            ha, va = "center", ("bottom" if dy > 0 else "top")
+        ax.text(lx, ly, n_id, fontsize=10, ha=ha, va=va)
+
+    small_handle = plt.Line2D([0], [0], marker="o", linestyle="None",
+                              markerfacecolor=COLORS["pathogeniq"],
+                              markeredgecolor="white", markersize=7,
+                              label=f"Community {small_comm} ($n$={total_by_community[small_comm]})")
+    large_handle = plt.Line2D([0], [0], marker="o", linestyle="None",
+                              markerfacecolor=COLORS["baseline1"],
+                              markeredgecolor="white", markersize=7,
+                              label=f"Community {large_comm} ($n$={total_by_community[large_comm]})")
+    pos_line = plt.Line2D([0], [0], color="#888", linewidth=1.0, label="Positive co-occ.")
+    neg_line = plt.Line2D([0], [0], color="#e74c3c", linewidth=1.0,
                           linestyle="dashed", label="Negative co-occ.")
-    ax.legend(handles=comm_patches + [pos_line, neg_line],
-              loc="upper left", fontsize=4.5,
+    ax.legend(handles=[small_handle, large_handle, pos_line, neg_line],
+              loc="lower center", ncol=2, fontsize=9.5,
               frameon=True, framealpha=0.85, edgecolor="#ccc",
-              handlelength=0.8, handleheight=0.7,
-              borderpad=0.4, labelspacing=0.3, handletextpad=0.4)
+              handlelength=1.2, borderpad=0.4, labelspacing=0.4,
+              handletextpad=0.4, columnspacing=0.8,
+              bbox_to_anchor=(0.5, -0.10))
 
     ax.set_title(
-        r"SBM Co-occurrence Network ($K=3$ communities, $|\rho|>0.6$, $n=59$ taxa)",
-        fontsize=7.5)
+        rf"K=2 SBM Co-occurrence Network ($N$={n_samples}, {n_total_taxa} taxa)",
+        fontsize=13)
     ax.axis("off")
+    ax.set_aspect("equal")
+    ax.margins(0.16)
 
     fig.tight_layout()
-    fig.savefig(FIG_DIR / "fig3_benchmark.pdf")
-    fig.savefig(FIG_DIR / "fig3_benchmark.png")
+    fig.subplots_adjust(bottom=0.10)
+    fig.savefig(FIG_DIR / "fig3_sbm_network.pdf")
+    fig.savefig(FIG_DIR / "fig3_sbm_network.png")
     plt.close(fig)
-    print("  fig3_benchmark.pdf ✓  (SBM co-occurrence network, real data)")
+    print(f"  fig3_sbm_network.pdf ✓  (K=2 SBM co-occurrence network, "
+          f"{len(connected)}/{n_total_taxa} connected taxa shown)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -887,7 +737,7 @@ def fig5_ablation(results: dict):
     deltas   = [v - full_f1 for v in vals]
     bar_cols = [COLORS["pathogeniq"] if i == 0 else "#c0392b" for i in range(len(labels))]
 
-    fig, axes = plt.subplots(1, 2, figsize=(TWO_COL, 2.0),
+    fig, axes = plt.subplots(1, 2, figsize=(TWO_COL, 2.4),
                              gridspec_kw={"width_ratios": [1.4, 1]})
 
     # Left: absolute F1
@@ -897,10 +747,10 @@ def fig5_ablation(results: dict):
                    edgecolor="white", linewidth=0.4, height=0.55)
     for rect, val in zip(bars, vals[::-1]):
         ax.text(val + 0.005, rect.get_y() + rect.get_height() / 2,
-                f"{val:.3f}", va="center", fontsize=6.5)
+                f"{val:.3f}", va="center", fontsize=10)
     ax.set_xlim(0, 1.05)
     ax.set_xlabel("Macro-avg F1")
-    ax.set_title("Signal Contribution (Ablation)", fontsize=8)
+    ax.set_title("Signal Contribution (Ablation)", fontsize=13)
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(True, axis="x", zorder=0)
 
@@ -914,10 +764,10 @@ def fig5_ablation(results: dict):
     for i, (dv, dl) in enumerate(zip(d_vals, d_labels)):
         ax.text(dv - 0.002 if dv < 0 else dv + 0.002,
                 i, f"{dv:+.3f}", va="center",
-                ha="right" if dv < 0 else "left", fontsize=6.5)
+                ha="right" if dv < 0 else "left", fontsize=10)
     ax.axvline(0, color="#555", lw=0.7)
     ax.set_xlabel("$\\Delta$ F1 vs. full")
-    ax.set_title("Marginal Contribution", fontsize=8)
+    ax.set_title("Marginal Contribution", fontsize=13)
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(True, axis="x", zorder=0)
 
@@ -1192,8 +1042,8 @@ def fig6_sbm_consensus(boot_results: dict):
         rf"SBM Consensus Matrix ($B={B}$ bootstrap resamples)",
         fontsize=7.5)
     fig.text(0.5, -0.02,
-             rf"Within-community co-assignment: {wm:.1f}\%; "
-             rf"between-community: {bm:.1f}\%",
+             rf"Within-community co-assignment: {wm:.1f}%; "
+             rf"between-community: {bm:.1f}%",
              ha="center", fontsize=6, color="#555", style="italic")
 
     fig.tight_layout()
@@ -1207,73 +1057,72 @@ def fig6_sbm_consensus(boot_results: dict):
 #  FIGURE 2 (REAL) — CUSUM trace from real wastewater time series
 # ══════════════════════════════════════════════════════════════════════════════
 
-def fig2_cusum_real(report_data: dict, series_key: str = "35939"):
+def fig2_cusum_real(report_data: dict):
     """
-    Plot CUSUM trace using real samples that form a time series.
-    Selects samples whose name contains `series_key`, sorted alphabetically
-    as a proxy for temporal order.
+    Plot the CUSUM trace over the 60-run site-207 chronological series
+    (recalibrated risk scores; ~2 runs/week over ~30 weeks). The CUSUM
+    statistic transiently exceeds the decision boundary around week 20
+    before receding — a single-week excursion rather than a sustained
+    shift, so no persistent alert fires.
     """
     samples = report_data["samples"]
-    series = sorted(
-        [s for s in samples if series_key in s["name"]],
-        key=lambda x: x["name"]
-    )
-    if not series:
-        print(f"  [fig2] No samples matching '{series_key}' — falling back to simulated.")
+    if "run_index" not in samples[0]:
+        print("  [fig2] report has no 'run_index' field — falling back to simulated.")
         fig2_cusum()
         return
 
-    run_ids  = [s["name"].replace("cleaned_SRR", "SRR").split("SRR")[-1] for s in series]
+    series   = sorted(samples, key=lambda s: s["run_index"])
+    dates    = [s["collection_date"] for s in series]
     scores   = np.array([s["score"] for s in series])
-    cusums   = np.array([s.get("temporal", {}).get("cusum", 0.0) for s in series])
-    alerts   = np.array([s.get("temporal", {}).get("cusum_alert", False) for s in series])
-    h        = 4.0
+    cusums   = np.array([s.get("cusum", 0.0) for s in series])
+    alerts   = np.array([s.get("cusum_alert", False) for s in series])
+    h        = report_data.get("temporal", {}).get("h", 4.0)
     x        = np.arange(len(series))
 
-    fig, axes = plt.subplots(2, 1, figsize=(ONE_COL * 1.85, 2.5),
+    fig, axes = plt.subplots(2, 1, figsize=(ONE_COL * 1.5, 2.7),
                              sharex=True, gridspec_kw={"hspace": 0.12})
 
     # ── top: risk score ───────────────────────────────────────────────────────
     ax = axes[0]
-    ax.bar(x, scores, color=COLORS["score"], alpha=0.75, width=0.6)
+    ax.bar(x, scores, color=COLORS["score"], alpha=0.75, width=0.7)
     ax.axhline(0.60, color=COLORS["threshold"], lw=0.9, ls="--")
     for i, (a, sc) in enumerate(zip(alerts, scores)):
         if a:
-            ax.bar(x[i], sc, color=COLORS["alert"], alpha=0.9, width=0.6)
+            ax.bar(x[i], sc, color=COLORS["alert"], alpha=0.9, width=0.7)
     ax.set_ylim(0, 1.0)
     ax.set_ylabel("Risk score")
     ax.grid(True, axis="y", zorder=0)
-    ax.set_title("CUSUM Early Warning: SRR35939 Wastewater Series (Real Data)",
-                 fontsize=7.5)
+    ax.set_title("CUSUM Trace (Site-207, 60 runs)", fontsize=12)
     ax.spines[["top", "right"]].set_visible(False)
 
     # ── bottom: CUSUM statistic ───────────────────────────────────────────────
     ax = axes[1]
-    ax.bar(x, cusums, color=COLORS["cusum"], alpha=0.75, width=0.6)
+    ax.bar(x, cusums, color=COLORS["cusum"], alpha=0.75, width=0.7, zorder=2)
+    ax.plot(x, cusums, color=COLORS["high"], lw=1.3, marker="o", markersize=3,
+            zorder=4, label="$C_t$ trend")
     ax.axhline(h, color=COLORS["alert"], lw=0.9, ls="--")
     alert_idx = [i for i, a in enumerate(alerts) if a]
     if alert_idx:
         ax.bar([x[i] for i in alert_idx], [cusums[i] for i in alert_idx],
-               color=COLORS["alert"], alpha=0.9, width=0.6)
+               color=COLORS["alert"], alpha=0.9, width=0.7, zorder=3)
         ax.scatter([x[i] for i in alert_idx], [cusums[i] for i in alert_idx],
                    color=COLORS["alert"], s=28, zorder=5)
-    ax.set_ylim(0, max(cusums.max() * 1.3, h * 1.5))
+    ax.legend(loc="upper left", fontsize=10, frameon=True, framealpha=0.85,
+              edgecolor="#ccc", handlelength=1.4, borderpad=0.3)
+    ax.set_ylim(0, max(h * 1.5, cusums.max() * 1.1))
     ax.set_ylabel("$C_t$")
-    ax.set_xticks(x)
-    ax.set_xticklabels(run_ids, fontsize=6.5, rotation=20, ha="right")
-    ax.set_xlabel("Sample (run order)")
+    ax.set_xticks(x[::8])
+    ax.set_xticklabels([d[2:] for d in dates[::8]], fontsize=9.5,
+                       rotation=30, ha="right")
+    ax.set_xlabel("Collection date (YY-MM-DD)")
     ax.grid(True, axis="y", zorder=0)
     ax.spines[["top", "right"]].set_visible(False)
 
-    fig.subplots_adjust(bottom=0.30, top=0.91, hspace=0.12)
-    fig.text(0.5, 0.02,
-             "Blue bars: sub-threshold risk score; red bars: CUSUM alert fired ($C_t \\geq h$).  "
-             "Dashed red line: alert threshold (top, $\\theta=0.6$) / decision boundary (bottom, $h=4$).",
-             ha="center", va="bottom", fontsize=5.5, color="#555", style="italic")
+    fig.subplots_adjust(bottom=0.14, top=0.92, hspace=0.12)
     fig.savefig(FIG_DIR / "fig2_cusum.pdf")
     fig.savefig(FIG_DIR / "fig2_cusum.png")
     plt.close(fig)
-    print("  fig2_cusum.pdf  ✓  (real data — SRR35939 series)")
+    print("  fig2_cusum.pdf  ✓  (real data — site-207 ~30-week, 60-run series)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1308,7 +1157,7 @@ def fig4_risk_dist_real(report_data: dict, alert_threshold: float = 0.6):
     ]
     COMM_COLOR = "#e67e22"
 
-    fig, ax = plt.subplots(figsize=(TWO_COL, 2.5))
+    fig, ax = plt.subplots(figsize=(ONE_COL * 1.5, 2.5))
 
     # ── Violin plots for continuous signals ──────────────────────────────────
     for pos, data, label, color in violin_groups:
@@ -1336,32 +1185,27 @@ def fig4_risk_dist_real(report_data: dict, alert_threshold: float = 0.6):
            bottom=[n_active / n_samples],
            color="#ddd", alpha=0.75, zorder=3,
            label=f"Inactive ({n_samples - n_active}/{n_samples})")
-    ax.text(2, n_active / n_samples + 0.03,
-            f"{n_active}/{n_samples}\n({n_active/n_samples*100:.0f}\\%)",
-            ha="center", va="bottom", fontsize=6.5,
-            color=COMM_COLOR, fontweight="bold", zorder=5)
+    ax.text(2, 0.5,
+            f"{n_active}/{n_samples}\n({n_active/n_samples*100:.0f}%)",
+            ha="center", va="center", fontsize=11,
+            color="white", fontweight="bold", zorder=5)
 
     ax.axhline(alert_threshold, color="#555", lw=0.9, ls="--")
     ax.text(4.42, alert_threshold + 0.03, f"θ={alert_threshold}",
-            fontsize=6.5, color="#555", va="bottom")
+            fontsize=10, color="#555", va="bottom")
 
     ax.set_xticks([1, 2, 3, 4])
     ax.set_xticklabels(
         ["Abundance\n(α=0.50)", "Community\n(β=0.25)",
          "Novelty\n(γ=0.25)", "Composite\nScore"],
-        fontsize=7.5)
+        fontsize=11)
     ax.set_ylim(-0.05, 1.15)
     ax.set_ylabel("Signal value")
     ax.set_title(
-        f"Risk Signal Distributions — {n_samples} Real Wastewater Samples",
-        fontsize=8)
+        f"Risk Signals: {n_samples} Real Samples",
+        fontsize=12)
     ax.grid(True, axis="y", zorder=0, alpha=0.5)
     ax.spines[["top", "right"]].set_visible(False)
-
-    fig.text(0.5, -0.01,
-             "Abundance, novelty, and composite: violin + jitter (continuous signals).  "
-             "Community: stacked bar (binary signal — active vs.\ inactive).",
-             ha="center", va="top", fontsize=6, color="#555", style="italic")
 
     fig.tight_layout()
     fig.savefig(FIG_DIR / "fig4_risk_dist.pdf")
@@ -1395,31 +1239,28 @@ def main():
     else:
         print("No --report provided: fig2/fig4 will use simulated data.\n")
 
-    print("[1/6] Pipeline architecture diagram ...")
-    fig1_pipeline()
-
-    print("[2/6] CUSUM temporal trace ...")
+    print("[1/5] CUSUM temporal trace ...")
     if report_data:
         fig2_cusum_real(report_data)
     else:
         fig2_cusum()
 
-    print("[3/6] Running benchmark (all scenarios × all methods) ...")
+    print("[2/5] Running benchmark (all scenarios × all methods) ...")
     results = run_benchmark_all(alert_threshold=args.threshold, seed=args.seed)
 
-    print("[4/6] SBM network (real data) / F1 bar chart (synthetic fallback) ...")
+    print("[3/5] SBM network (real data) / F1 bar chart (synthetic fallback) ...")
     if report_data:
         fig3_sbm_network(report_data)
     else:
         fig3_benchmark(results)
 
-    print("[5/6] Risk score distribution ...")
+    print("[4/5] Risk score distribution ...")
     if report_data:
         fig4_risk_dist_real(report_data, alert_threshold=args.threshold)
     else:
         fig4_risk_dist(results, alert_threshold=args.threshold)
 
-    print("[6/6] Ablation figure ...")
+    print("[5/5] Ablation figure ...")
     ablation_means, ablation_deltas, ablation_labels = fig5_ablation(results)
 
     print("[7/7] Writing LaTeX table numbers ...")
@@ -1432,11 +1273,11 @@ def main():
         if boot_results:
             fig6_sbm_consensus(boot_results)
 
+    fig3_name = "fig3_sbm_network" if report_data else "fig3_benchmark"
     print(f"\nDone. Files written to {FIG_DIR}/")
     print("Include in LaTeX with:")
-    print(r"  \includegraphics[width=\columnwidth]{figures/fig1_pipeline}")
     print(r"  \includegraphics[width=\columnwidth]{figures/fig2_cusum}")
-    print(r"  \includegraphics[width=\linewidth]{figures/fig3_benchmark}")
+    print(rf"  \includegraphics[width=\linewidth]{{figures/{fig3_name}}}")
     print(r"  \includegraphics[width=\columnwidth]{figures/fig4_risk_dist}")
     print(r"  \includegraphics[width=\linewidth]{figures/fig5_ablation}")
 

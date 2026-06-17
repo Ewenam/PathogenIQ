@@ -18,8 +18,8 @@
 set -euo pipefail
 
 # ── EDIT THESE ───────────────────────────────────────────────
-KRAKEN_REPORTS_DIR="$HOME/Desktop/AAB Project/data/reports"   # directory of *.report files
-OUTPUT_DIR="$HOME/Desktop/PathogenIQ/reports"
+KRAKEN_REPORTS_DIR="/home/users/razumah1/Desktop/PathogenIQ/expanded_datasets/reports"   # directory of *.report files
+OUTPUT_DIR="/home/users/razumah1/Desktop/PathogenIQ/reports"
 RANK="G"          # G=genus (recommended), S=species, F=family
 # ─────────────────────────────────────────────────────────────
 

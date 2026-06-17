@@ -15,7 +15,7 @@ Risk levels:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 import pandas as pd
@@ -220,6 +220,7 @@ def score_sample(
     # is actionable regardless of community structure or novelty score.
     # Thresholds derived from WHO/CDC wastewater-based epidemiology guidelines.
     direct = 0.0
+    load = 0.0
     if detected:
         top = detected[0]
         rw, ab = top["risk_weight"], top["abundance"]
@@ -255,9 +256,60 @@ def score_sample(
             "novelty_signal": novelty,
             "composite_score": round(composite, 4),
             "direct_detection_score": round(direct, 4),
+            "load": round(load, 4),
             "weights": w,
         },
     )
+
+
+def recalibrate_direct_detection(
+    scores: list[RiskScore],
+    z_threshold: float = 2.0,
+) -> list[RiskScore]:
+    """
+    Re-evaluate the direct-detection override against a site/cohort baseline.
+
+    The absolute `load >= 0.10 -> direct = 0.62` rule in `score_sample` is
+    calibrated against outbreak-level contamination and saturates on
+    endemic wastewater flora, where common enteric/environmental genera
+    (e.g. Pseudomonas, Streptococcus) routinely exceed 0.10 even when
+    nothing unusual is happening at the site.
+
+    This function treats the cohort passed in as a site baseline: it
+    computes the mean/std of `load` across all samples, then only keeps
+    the direct-detection override for samples whose `load` is a
+    statistical anomaly relative to that baseline (z >= z_threshold).
+    For all other samples, the override is suppressed and the score
+    falls back to `composite_score`. This is additive — `score_sample`
+    and the synthetic benchmark (which compares against fixed absolute
+    thresholds) are unaffected.
+    """
+    loads = np.array([s.breakdown.get("load", 0.0) for s in scores], dtype=float)
+    mean_load = float(np.mean(loads))
+    std_load = float(np.std(loads, ddof=1)) if len(loads) > 1 else 0.0
+
+    recalibrated = []
+    for s in scores:
+        load = s.breakdown.get("load", 0.0)
+        z = (load - mean_load) / (std_load + 1e-10)
+        direct = s.breakdown.get("direct_detection_score", 0.0)
+        direct_recal = direct if z >= z_threshold else 0.0
+
+        composite = s.breakdown.get("composite_score", 0.0)
+        new_score = float(np.clip(max(composite, direct_recal), 0.0, 1.0))
+
+        new_breakdown = dict(s.breakdown)
+        new_breakdown["load_z"] = round(z, 4)
+        new_breakdown["direct_detection_score_recal"] = round(direct_recal, 4)
+
+        recalibrated.append(replace(
+            s,
+            score=new_score,
+            level=_score_level(new_score),
+            breakdown=new_breakdown,
+        ))
+
+    return recalibrated
 
 
 def identify_pathogen_communities(

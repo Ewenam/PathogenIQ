@@ -134,6 +134,22 @@ Kraken2 .report files  OR  taxa × samples count matrix (TSV/CSV)
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
+│  Step 6.7 · Lineage Context                                     │
+│  Species-level strain/variant annotation from curated DB        │
+│  Flags outbreak strains, WHO priority variants, Select Agents   │
+│  (e.g. Salmonella Typhi XDR, E. coli O157:H7, CRKP ST258)      │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Step 6.8 · AMR Annotation                                      │
+│  Genus-level antimicrobial resistance context from WHO/CDC DB   │
+│  ESKAPE pathogens, carbapenem resistance, MRSA, ESBL, XDR       │
+│  No raw reads required — works from Kraken2 genus output        │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
 │  Step 7 · Characterization (optional, --characterize)           │
 │  For flagged pathogens: fetch protein sequences from NCBI       │
 │  → ESMFold 3D structure prediction (pLDDT confidence score)     │
@@ -258,8 +274,10 @@ export PATHOGENIQ_DASH_AUTH="false"   # disable auth entirely
 - **Surveillance map** — Leaflet.js map with risk-colored markers per site (requires `site_locations.json`)
 - **Sites table** — sortable by risk score, Z-score, CUSUM signal, trend, forecast; live search bar and risk level filter pills
 - **Keyboard navigation** — ↑/↓ to move between sites, Enter to select, Escape to close
-- **Alert feed** — HIGH/CRITICAL sites with top detected pathogens
-- **Site detail panel** — animated risk score meter, score history chart, CUSUM changepoint chart, pathogen breakdown
+- **Alert feed** — HIGH/CRITICAL sites with top detected pathogens; capped at 4 inline with "View all N alerts" modal to prevent page overflow
+- **Site detail panel** — animated risk score meter, score history chart, CUSUM changepoint chart, pathogen breakdown, AMR annotation cards, lineage context
+- **Sample diff view** — select any two samples to see which taxa appeared, disappeared, or shifted in abundance between them
+- **Export** — ⬇ CSV (flat table of all samples + metrics) and ⎙ PDF (print-optimized report via browser)
 - **Auto-refresh** every 60 seconds
 
 > **Offline / restricted networks:** Chart.js and Leaflet.js are bundled directly into `index.html` — no external requests are made. The dashboard works fully offline.
@@ -354,8 +372,16 @@ pathogeniq run ./kraken_reports/ \
 # View a report summary
 pathogeniq summary reports/report.json
 
+# Lineage context for a single Kraken2 report (species-level strain annotation)
+pathogeniq lineage sample.report
+pathogeniq lineage sample.report --threshold 0.005
+
 # Watch a directory for new data
 pathogeniq watch ./data --interval 3600 --alert-slack
+
+# Replay time-series data with explicit run dates (populates temporal store)
+pathogeniq run ./site_week1/ --run-date 2025-10-02
+pathogeniq run ./site_week2/ --run-date 2025-10-09
 
 # Validation benchmark
 pathogeniq benchmark
@@ -459,6 +485,10 @@ reporting:
 | `characterization/alphafold.py` | NCBI protein fetch + ESMFold structure prediction + virulence annotation |
 | `embedding/vqvae.py` | VQ-VAE model for sequence-level novelty detection |
 | `embedding/train.py` | VQ-VAE training script |
+| `amr/annotator.py` | Genus-level AMR annotation against WHO/CDC/ESKAPE curated database |
+| `amr/database.py` | AMR database: 20 genera with resistance tiers, mechanisms, and last-resort drugs |
+| `lineage/detector.py` | Species-level lineage context annotation; `pathogeniq lineage` CLI command |
+| `lineage/database.py` | Lineage database: 16 species entries with outbreak strains, WHO labels, WBE notes |
 | `alerting/dispatcher.py` | Unified alert dispatcher (email + Slack) |
 | `benchmark/runner.py` | Ground-truth benchmark suite with 6 synthetic scenarios |
 | `scheduler/watcher.py` | Directory poller for automated pipeline triggering |

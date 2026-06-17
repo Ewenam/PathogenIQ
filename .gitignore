@@ -18,3 +18,5 @@ reports/
 *.db
 .pathogeniq_processed.json
 METHODS.md
+manuscript/
+.venv/

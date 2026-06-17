@@ -36,7 +36,7 @@ except ImportError:
 # ─────────────────────────────────────────────
 #  SET THIS — same as INPUT in run.py
 # ─────────────────────────────────────────────
-INPUT_DIR = "/home/users/razumah1/Desktop/AAB Project/data/reports"
+INPUT_DIR = "/home/users/razumah1/Desktop/PathogenIQ/expanded_datasets/reports" #/home/users/razumah1/Desktop/AAB Project/data/reports" 
 
 # Where to write outputs (same folder as PathogenIQ dashboard)
 SITE_LOCATIONS_JSON = Path(__file__).parent / "pathogeniq" / "dashboard" / "site_locations.json"

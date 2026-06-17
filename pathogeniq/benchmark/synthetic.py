@@ -103,11 +103,19 @@ def generate_scenario(
     scenario: Scenario,
     seed: int = 42,
     total_reads_range: tuple[int, int] = (100_000, 500_000),
+    add_noise: bool = True,
 ) -> SyntheticDataset:
     """
     Generate a synthetic count matrix for one benchmark scenario.
 
     Returns a SyntheticDataset with the count matrix and ground-truth labels.
+
+    add_noise: if True (default), apply Poisson sampling noise to every
+        taxon's read count, simulating the sequencing-depth variability
+        present in real Kraken2 reports (counts are draws from the
+        underlying composition, not exact proportions of total_reads).
+        Low-abundance taxa are affected proportionally more than
+        high-abundance ones, as in real data.
     """
     rng = np.random.default_rng(seed)
     n = scenario.n_samples
@@ -152,6 +160,16 @@ def generate_scenario(
 
     count_matrix = pd.DataFrame(data, index=sample_names).T
     count_matrix.index.name = "taxon"
+
+    # ── Sequencing-depth noise ────────────────────────────────────────────────
+    # Real Kraken2 counts are draws from the underlying composition, not exact
+    # proportions of total_reads. Apply Poisson sampling noise per taxon×sample
+    # so low-abundance taxa (e.g. low_contamination pathogens) show realistic
+    # run-to-run variability while high-abundance taxa remain stable.
+    if add_noise:
+        expected = count_matrix.to_numpy().astype(float)
+        noisy = rng.poisson(expected)
+        count_matrix = pd.DataFrame(noisy, index=count_matrix.index, columns=count_matrix.columns)
 
     # ── Ground truth labels ───────────────────────────────────────────────────
     total_pathogen_frac = cum_fracs

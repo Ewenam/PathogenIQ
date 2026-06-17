@@ -16,13 +16,18 @@ import base64
 import json
 import os
 import secrets
+import shutil
+import tempfile
+import threading
+import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
+from typing import List
 
 from ..temporal.store import TimeSeriesStore, DEFAULT_DB
 
@@ -352,6 +357,88 @@ async def site_amr(site_name: str):
         if s["name"] == site_name:
             return {"site": site_name, "amr_annotations": s.get("amr_annotations", [])}
     raise HTTPException(404, f"Site '{site_name}' not found")
+
+
+# ── Upload & Run ──────────────────────────────────────────────────────────────
+# In-memory job store (fine for single-process; persists until restart)
+_JOBS: dict[str, dict] = {}
+
+
+def _pipeline_worker(job_id: str, upload_dir: Path, rank: str, output_dir: Path):
+    """Run the pipeline in a background thread, logging progress into _JOBS."""
+    job = _JOBS[job_id]
+    try:
+        from ..pipeline.runner import run as _run, PipelineConfig
+        job["status"] = "ingesting"
+        job["log"] += "Ingesting Kraken2 reports…\n"
+
+        cfg = PipelineConfig(
+            output_dir=str(output_dir),
+            alert_threshold=0.6,
+            db_path=str(_DB_PATH),
+        )
+
+        job["status"] = "scoring"
+        job["log"] += "Running pipeline (scoring, AMR, lineage, temporal)…\n"
+
+        _run(input_path=upload_dir, config=cfg, rank=rank, run_characterization=False, quiet=True)
+
+        # Update the global report path so the dashboard reloads the new result
+        global _REPORT_PATH
+        _REPORT_PATH = output_dir / "report.json"
+        os.environ["PATHOGENIQ_REPORT"] = str(_REPORT_PATH)
+
+        job["status"] = "done"
+        job["log"] += f"Done. Report → {_REPORT_PATH}\n"
+    except Exception as exc:
+        job["status"] = "error"
+        job["log"] += f"\nError: {exc}\n"
+    finally:
+        # Clean up uploaded files after pipeline finishes
+        shutil.rmtree(upload_dir, ignore_errors=True)
+
+
+@app.post("/api/upload-run")
+async def upload_run(
+    files: List[UploadFile] = File(...),
+    rank: str = Form("G"),
+):
+    """
+    Accept uploaded Kraken2 .report files (or a single .tsv/.csv count matrix),
+    save them to a temp directory, and run the full PathogenIQ pipeline in a
+    background thread.  Returns a job_id for polling /api/run-status/{job_id}.
+    """
+    job_id = str(uuid.uuid4())[:8]
+    upload_dir = Path(tempfile.mkdtemp(prefix=f"piq_{job_id}_"))
+    output_dir = _REPORT_PATH.parent  # write results next to existing report
+
+    _JOBS[job_id] = {"status": "uploading", "log": f"Job {job_id} — saving {len(files)} file(s)…\n"}
+
+    # Save uploaded files
+    for uf in files:
+        dest = upload_dir / (uf.filename or f"upload_{uuid.uuid4().hex[:6]}.report")
+        content = await uf.read()
+        dest.write_bytes(content)
+        _JOBS[job_id]["log"] += f"  saved: {dest.name} ({len(content)//1024} KB)\n"
+
+    _JOBS[job_id]["status"] = "ingesting"
+    t = threading.Thread(
+        target=_pipeline_worker,
+        args=(job_id, upload_dir, rank, output_dir),
+        daemon=True,
+    )
+    t.start()
+
+    return JSONResponse({"job_id": job_id, "status": "started", "files": len(files)})
+
+
+@app.get("/api/run-status/{job_id}")
+async def run_status(job_id: str):
+    """Poll the status and log of a running pipeline job."""
+    if job_id not in _JOBS:
+        raise HTTPException(404, f"Job '{job_id}' not found")
+    job = _JOBS[job_id]
+    return JSONResponse({"job_id": job_id, "status": job["status"], "log": job["log"]})
 
 
 if __name__ == "__main__":

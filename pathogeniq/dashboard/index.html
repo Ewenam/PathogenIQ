@@ -1006,6 +1006,61 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .diff-select-wrap select { background: var(--bg3); border: 1px solid var(--border);
     color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 12px; width: 100%; }
 
+  /* ── Upload modal ── */
+  .upload-modal-backdrop {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    z-index: 10001; align-items: center; justify-content: center; padding: 20px;
+  }
+  .upload-modal-backdrop.open { display: flex; }
+  .upload-modal {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 14px;
+    width: min(580px, 96vw); display: flex; flex-direction: column;
+    animation: slideIn .18s ease;
+  }
+  .upload-modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+  }
+  .upload-modal-title { font-size: 14px; font-weight: 600; }
+  .upload-modal-close { background: none; border: none; color: var(--text2);
+    font-size: 20px; cursor: pointer; padding: 0 4px; line-height: 1; }
+  .upload-modal-close:hover { color: var(--text); }
+  .upload-modal-body { padding: 20px; }
+  .drop-zone {
+    border: 2px dashed var(--border); border-radius: 10px; padding: 32px 20px;
+    text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
+    margin-bottom: 16px;
+  }
+  .drop-zone.drag-over { border-color: var(--accent); background: rgba(88,166,255,.06); }
+  .drop-zone-icon { font-size: 32px; margin-bottom: 8px; }
+  .drop-zone-text { font-size: 13px; color: var(--text2); }
+  .drop-zone-text strong { color: var(--text); }
+  .drop-zone-hint { font-size: 11px; color: var(--text2); margin-top: 6px; font-family: var(--mono); }
+  .file-list { margin-bottom: 14px; }
+  .file-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+    background: var(--bg3); border-radius: 6px; margin-bottom: 5px; font-size: 12px; }
+  .file-item-name { flex: 1; font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-item-size { color: var(--text2); flex-shrink: 0; }
+  .file-item-rm { background: none; border: none; color: var(--text2); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0 3px; }
+  .file-item-rm:hover { color: var(--critical); }
+  .upload-rank-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 12px; color: var(--text2); }
+  .upload-rank-row select { background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 5px 10px; font-size: 12px; }
+  .upload-progress { margin-top: 10px; }
+  .progress-bar { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 3px;
+    transition: width .3s ease; width: 0%; }
+  .progress-log { font-size: 11px; color: var(--text2); font-family: var(--mono);
+    max-height: 120px; overflow-y: auto; white-space: pre-wrap; }
+  .run-btn {
+    width: 100%; padding: 10px; background: var(--accent); border: none; border-radius: 8px;
+    color: #0d1117; font-size: 13px; font-weight: 700; cursor: pointer;
+    transition: opacity .15s; font-family: var(--font);
+  }
+  .run-btn:hover { opacity: .88; }
+  .run-btn:disabled { opacity: .4; cursor: not-allowed; }
+
   /* ── Print / PDF styles ── */
   @media print {
     header, .view-tabs-row, .filter-pills, .search-wrap, .refresh-btn,
@@ -1021,19 +1076,41 @@ svg.leaflet-image-layer.leaflet-interactive path {
     @page { margin: 1.2cm; }
   }
 
-  /* ── Detail panel ── */
-  .detail-panel { display: none; margin-top: 20px; }
-  .detail-panel.visible { display: block; animation: slideIn .2s ease; }
+  /* ── Detail modal ── */
+  .detail-modal-backdrop {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    z-index: 9000; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .detail-modal-backdrop.open { display: flex; }
+  .detail-modal {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 14px;
+    width: min(740px, 96vw); max-height: 90vh; display: flex; flex-direction: column;
+    animation: slideUp .2s ease;
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
   @keyframes slideIn {
     from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: translateY(0); }
   }
+  .detail-modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .detail-modal-body {
+    overflow-y: auto; padding: 20px; flex: 1;
+  }
+  .detail-modal-body::-webkit-scrollbar { width: 5px; }
+  .detail-modal-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
   .detail-header {
     display: flex; align-items: flex-start; justify-content: space-between;
     margin-bottom: 14px; gap: 8px;
   }
   .detail-site-name {
-    font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--accent);
+    font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--accent);
     word-break: break-all; flex: 1;
   }
   .detail-close {
@@ -1112,6 +1189,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <span class="last-updated" id="last-updated">Loading...</span>
     <button class="refresh-btn" onclick="window.location.href=API+'/api/export/csv'" title="Download CSV report">⬇ CSV</button>
     <button class="refresh-btn" onclick="window.print()" title="Print / Save as PDF">⎙ PDF</button>
+    <button class="refresh-btn" onclick="openUploadModal()" title="Upload Kraken2 reports and run pipeline" style="background:rgba(88,166,255,.12);border-color:var(--accent);color:var(--accent)">⬆ Upload &amp; Run</button>
     <button class="refresh-btn" id="refresh-btn" onclick="refreshAll()">↻ Refresh</button>
   </div>
 </header>
@@ -1234,54 +1312,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <button class="alerts-view-all" id="alerts-view-all-btn" style="display:none"
             onclick="openAlertsModal()">View all alerts ↗</button>
 
-    <hr class="divider">
-
-    <!-- Site detail panel -->
-    <div class="detail-panel" id="detail-panel">
-
-      <div class="detail-header">
-        <div class="detail-site-name" id="detail-site-name">—</div>
-        <button class="detail-close" onclick="closeDetail()" title="Close">×</button>
-      </div>
-
-      <!-- Score meter -->
-      <div class="score-meter" id="detail-score-meter" style="display:none">
-        <div class="score-meter-header">
-          <span class="score-meter-label">Risk Score</span>
-          <span class="score-meter-val" id="detail-score-val">—</span>
-        </div>
-        <div class="score-meter-track">
-          <div class="score-meter-fill" id="detail-score-fill" style="width:0%"></div>
-        </div>
-        <div class="score-meter-footer">
-          <span id="detail-level-badge"></span>
-          <span class="score-breakdown" id="detail-breakdown"></span>
-        </div>
-      </div>
-
-      <div class="chart-box">
-        <div class="chart-label">Risk Score History</div>
-        <canvas id="score-chart" class="chart-canvas"></canvas>
-      </div>
-
-      <div class="chart-box">
-        <div class="chart-label">CUSUM — Changepoint Detection</div>
-        <canvas id="cusum-chart" class="chart-canvas"></canvas>
-      </div>
-
-      <div class="section-title" style="margin-top:14px">Detected Pathogens</div>
-      <div id="detail-pathogens" class="pathogen-list"></div>
-
-      <div id="detail-amr-section" style="display:none;margin-top:14px">
-        <div class="section-title">AMR Risk Context</div>
-        <div id="detail-amr-list"></div>
-      </div>
-
-      <div style="margin-top:14px">
-        <button class="refresh-btn" id="compare-btn" style="font-size:11px"
-                onclick="startCompare()">⇄ Compare with another sample</button>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -1599,10 +1629,10 @@ async function selectSite(name) {
   if (idx >= 0) _focusedRow = idx;
   renderTable();
 
-  const panel = document.getElementById('detail-panel');
-  panel.classList.remove('visible');
-  void panel.offsetHeight; // force reflow for re-animation
-  panel.classList.add('visible');
+  const backdrop = document.getElementById('detail-modal-backdrop');
+  backdrop.classList.remove('open');
+  void backdrop.offsetHeight; // reflow for re-animation
+  backdrop.classList.add('open');
   document.getElementById('detail-site-name').textContent = name;
 
   const siteData = _sites.find(s => s.name === name);
@@ -1644,18 +1674,17 @@ async function selectSite(name) {
 
   renderPathogens(pathResp.pathogens || []);
 
-  // AMR annotations — pull from report data already in _sites
+  // AMR + lineage annotations — pull from report data already in _sites
   const siteData2 = _sites.find(s => s.name === name);
   renderAMR(siteData2?.amr_annotations || []);
+  renderLineage(siteData2?.lineage_annotations || []);
 
-  // Scroll right column into view (mobile)
-  document.querySelector('.right-col').scrollTop = 0;
 }
 
 function closeDetail() {
   _selectedSite = null;
   _focusedRow = -1;
-  document.getElementById('detail-panel').classList.remove('visible');
+  document.getElementById('detail-modal-backdrop').classList.remove('open');
   document.getElementById('detail-score-meter').style.display = 'none';
   renderTable();
 }
@@ -2362,14 +2391,240 @@ async function runDiff() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeDiffModal(); closeAlertsModal(); }
+  if (e.key === 'Escape') { closeDetail(); closeDiffModal(); closeAlertsModal(); closeUploadModal(); }
 });
+
+// ── Lineage rendering ─────────────────────────────────────────────────────────
+
+function renderLineage(annotations) {
+  const section = document.getElementById('detail-lineage-section');
+  const list    = document.getElementById('detail-lineage-list');
+  if (!annotations || !annotations.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  list.innerHTML = annotations.map(a => {
+    const variants = (a.known_variants || []).slice(0, 4)
+      .map(v => `<span style="background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.2);color:var(--accent);border-radius:4px;padding:2px 7px;font-size:10px">${v.name||v}</span>`)
+      .join(' ');
+    return `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">
+      <div style="font-family:var(--mono);font-size:12px;font-weight:700;font-style:italic;color:var(--text)">${a.species}</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:3px">${a.who_label || ''}</div>
+      ${variants ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">${variants}</div>` : ''}
+      ${a.wbe_utility ? `<div style="font-size:10px;color:#6e7681;margin-top:5px;font-style:italic">${a.wbe_utility}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── Upload & Run ──────────────────────────────────────────────────────────────
+
+let _uploadFiles = [];
+
+function openUploadModal() {
+  _uploadFiles = [];
+  document.getElementById('upload-file-list').innerHTML = '';
+  document.getElementById('upload-file-count').textContent = 'No files selected';
+  document.getElementById('run-pipeline-btn').disabled = true;
+  document.getElementById('upload-progress').style.display = 'none';
+  document.getElementById('progress-log').textContent = '';
+  document.getElementById('progress-fill').style.width = '0%';
+  document.getElementById('upload-modal-backdrop').classList.add('open');
+}
+
+function closeUploadModal() {
+  document.getElementById('upload-modal-backdrop').classList.remove('open');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  handleFileSelect(e.dataTransfer.files);
+}
+
+function handleFileSelect(files) {
+  for (const f of files) _uploadFiles.push(f);
+  renderFileList();
+}
+
+function renderFileList() {
+  const list = document.getElementById('upload-file-list');
+  const count = document.getElementById('upload-file-count');
+  const btn = document.getElementById('run-pipeline-btn');
+  list.innerHTML = _uploadFiles.map((f, i) => `
+    <div class="file-item">
+      <span class="file-item-name">${f.name}</span>
+      <span class="file-item-size">${(f.size/1024).toFixed(1)} KB</span>
+      <button class="file-item-rm" onclick="removeFile(${i})" title="Remove">×</button>
+    </div>`).join('');
+  count.textContent = _uploadFiles.length ? `${_uploadFiles.length} file(s) ready` : 'No files selected';
+  btn.disabled = _uploadFiles.length === 0;
+}
+
+function removeFile(i) {
+  _uploadFiles.splice(i, 1);
+  renderFileList();
+}
+
+async function runUploadedPipeline() {
+  if (!_uploadFiles.length) return;
+  const rank = document.getElementById('upload-rank').value;
+  const btn  = document.getElementById('run-pipeline-btn');
+  const prog = document.getElementById('upload-progress');
+  const fill = document.getElementById('progress-fill');
+  const log  = document.getElementById('progress-log');
+
+  btn.disabled = true;
+  btn.textContent = 'Uploading…';
+  prog.style.display = '';
+  fill.style.width = '10%';
+  log.textContent = 'Uploading files…\n';
+
+  const form = new FormData();
+  _uploadFiles.forEach(f => form.append('files', f));
+  form.append('rank', rank);
+
+  try {
+    const r = await fetch(API + '/api/upload-run', { method: 'POST', body: form });
+    if (!r.ok) { log.textContent += `\nUpload failed: ${r.status} ${r.statusText}`; btn.disabled = false; btn.textContent = 'Run PathogenIQ Pipeline'; return; }
+    const d = await r.json();
+    const jobId = d.job_id;
+    log.textContent += `Job started: ${jobId}\n`;
+    fill.style.width = '25%';
+
+    // Poll status
+    btn.textContent = 'Running…';
+    const poll = setInterval(async () => {
+      try {
+        const sr = await fetch(API + `/api/run-status/${jobId}`);
+        const sd = await sr.json();
+        log.textContent = sd.log || '';
+        log.scrollTop = log.scrollHeight;
+        const pct = { 'uploading': 20, 'ingesting': 35, 'scoring': 55, 'temporal': 70, 'reporting': 88, 'done': 100, 'error': 100 }[sd.status] || 50;
+        fill.style.width = pct + '%';
+        if (sd.status === 'done') {
+          clearInterval(poll);
+          log.textContent += '\n✓ Pipeline complete — reloading dashboard…';
+          btn.textContent = '✓ Done!';
+          setTimeout(() => { closeUploadModal(); loadAll(); }, 1200);
+        } else if (sd.status === 'error') {
+          clearInterval(poll);
+          btn.textContent = 'Run PathogenIQ Pipeline';
+          btn.disabled = false;
+        }
+      } catch { clearInterval(poll); }
+    }, 2000);
+  } catch(err) {
+    log.textContent += `\nError: ${err}`;
+    btn.disabled = false;
+    btn.textContent = 'Run PathogenIQ Pipeline';
+  }
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 loadAll();
 setInterval(loadAll, 60000);
 </script>
+
+<!-- Detail modal -->
+<div class="detail-modal-backdrop" id="detail-modal-backdrop"
+     onclick="if(event.target===this)closeDetail()">
+  <div class="detail-modal">
+    <div class="detail-modal-header">
+      <div class="detail-site-name" id="detail-site-name" style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--accent);word-break:break-all">—</div>
+      <button class="detail-close" onclick="closeDetail()" title="Close" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1;padding:0 4px">×</button>
+    </div>
+    <div class="detail-modal-body">
+
+      <!-- Score meter -->
+      <div class="score-meter" id="detail-score-meter" style="display:none;margin-bottom:16px">
+        <div class="score-meter-header">
+          <span class="score-meter-label">Risk Score</span>
+          <span class="score-meter-val" id="detail-score-val">—</span>
+        </div>
+        <div class="score-meter-track">
+          <div class="score-meter-fill" id="detail-score-fill" style="width:0%"></div>
+        </div>
+        <div class="score-meter-footer">
+          <span id="detail-level-badge"></span>
+          <span class="score-breakdown" id="detail-breakdown"></span>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="chart-box" style="margin-bottom:0">
+          <div class="chart-label">Risk Score History</div>
+          <canvas id="score-chart" class="chart-canvas"></canvas>
+        </div>
+        <div class="chart-box" style="margin-bottom:0">
+          <div class="chart-label">CUSUM — Changepoint Detection</div>
+          <canvas id="cusum-chart" class="chart-canvas"></canvas>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top:14px">Detected Pathogens</div>
+      <div id="detail-pathogens" class="pathogen-list"></div>
+
+      <div id="detail-amr-section" style="display:none;margin-top:14px">
+        <div class="section-title">AMR Risk Context</div>
+        <div id="detail-amr-list"></div>
+      </div>
+
+      <div id="detail-lineage-section" style="display:none;margin-top:14px">
+        <div class="section-title">Lineage Context</div>
+        <div id="detail-lineage-list"></div>
+      </div>
+
+      <div style="margin-top:16px">
+        <button class="refresh-btn" id="compare-btn" style="font-size:11px"
+                onclick="startCompare()">⇄ Compare with another sample</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Upload & Run modal -->
+<div class="upload-modal-backdrop" id="upload-modal-backdrop"
+     onclick="if(event.target===this)closeUploadModal()">
+  <div class="upload-modal">
+    <div class="upload-modal-header">
+      <span class="upload-modal-title">⬆ Upload Kraken2 Reports &amp; Run Pipeline</span>
+      <button class="upload-modal-close" onclick="closeUploadModal()">×</button>
+    </div>
+    <div class="upload-modal-body">
+      <div class="drop-zone" id="drop-zone"
+           onclick="document.getElementById('file-input').click()"
+           ondragover="event.preventDefault();this.classList.add('drag-over')"
+           ondragleave="this.classList.remove('drag-over')"
+           ondrop="handleDrop(event)">
+        <div class="drop-zone-icon">📂</div>
+        <div class="drop-zone-text"><strong>Click to browse</strong> or drag &amp; drop files here</div>
+        <div class="drop-zone-hint">.report files from Kraken2 — or a single .tsv / .csv count matrix</div>
+      </div>
+      <input type="file" id="file-input" multiple accept=".report,.tsv,.csv" style="display:none"
+             onchange="handleFileSelect(this.files)">
+
+      <div class="file-list" id="upload-file-list"></div>
+
+      <div class="upload-rank-row">
+        <span>Taxonomic rank:</span>
+        <select id="upload-rank">
+          <option value="G">G — Genus (default)</option>
+          <option value="S">S — Species</option>
+          <option value="F">F — Family</option>
+        </select>
+        <span style="margin-left:auto;font-size:11px;color:var(--text2)" id="upload-file-count">No files selected</span>
+      </div>
+
+      <button class="run-btn" id="run-pipeline-btn" onclick="runUploadedPipeline()" disabled>
+        Run PathogenIQ Pipeline
+      </button>
+
+      <div class="upload-progress" id="upload-progress" style="display:none">
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+        <div class="progress-log" id="progress-log"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Diff modal -->
 <div class="diff-modal-backdrop" id="diff-modal-backdrop"

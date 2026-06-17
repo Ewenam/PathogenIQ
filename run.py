@@ -37,10 +37,10 @@ except ImportError:
 # Examples:
 #   INPUT = "/home/users/razumah1/Desktop/AAB Project/data/reports"   # folder of .report files
 #   INPUT = "/path/to/counts.tsv"                                      # pre-built matrix
-INPUT = "/home/users/razumah1/Desktop/AAB Project/data/reports"
+INPUT = "/home/users/razumah1/Desktop/PathogenIQ/expanded_datasets/reports"
 
 # Where to save the report.json, report.html, and figures.
-OUTPUT_DIR = "/home/users/razumah1/Desktop/PathogenIQ/reports"
+OUTPUT_DIR = "/home/users/razumah1/Desktop/PathogenIQ/reports/expanded_datasets"  # e.g. "/home/user/pathogeniq_reports"
 
 # ─────────────────────────────────────────────
 #  OPTIONAL: tweak these as needed

@@ -1,6 +1,142 @@
 {
   "_comment": "GPS coordinates for PathogenIQ map view. Keys must match sample names exactly as they appear in the pipeline report (after paired-end merging).",
   "_sources": "NCBI SRA BioSample metadata: Wisconsin State Laboratory of Hygiene (BioProject SRR3593973x) and Colorado SARS-CoV-2 wastewater surveillance (BioProject SRR3555600x)",
+  "SRR36780738": {
+    "lat": 33.04,
+    "lon": -83.643,
+    "label": "Georgia, (2025-12-28)",
+    "accession": "SRR36780738",
+    "collection_date": "2025-12-28",
+    "isolation_source": "wastewater"
+  },
+  "SRR36780874": {
+    "lat": 27.766,
+    "lon": -81.687,
+    "label": "Florida, (2025-12-31)",
+    "accession": "SRR36780874",
+    "collection_date": "2025-12-31",
+    "isolation_source": "wastewater"
+  },
+  "SRR36780902": {
+    "lat": 31.054,
+    "lon": -97.563,
+    "label": "Texas, (2025-12-30)",
+    "accession": "SRR36780902",
+    "collection_date": "2025-12-30",
+    "isolation_source": "wastewater"
+  },
+  "SRR36780904": {
+    "lat": 31.054,
+    "lon": -97.563,
+    "label": "Texas, (2025-12-29)",
+    "accession": "SRR36780904",
+    "collection_date": "2025-12-29",
+    "isolation_source": "wastewater"
+  },
+  "SRR36780907": {
+    "lat": 27.766,
+    "lon": -81.687,
+    "label": "Florida, (2025-12-31)",
+    "accession": "SRR36780907",
+    "collection_date": "2025-12-31",
+    "isolation_source": "wastewater"
+  },
+  "SRR36780908": {
+    "lat": 31.054,
+    "lon": -97.563,
+    "label": "Texas, (2025-12-30)",
+    "accession": "SRR36780908",
+    "collection_date": "2025-12-30",
+    "isolation_source": "wastewater"
+  },
+  "SRR36780944": {
+    "lat": 27.766,
+    "lon": -81.687,
+    "label": "Florida, (2025-12-29)",
+    "accession": "SRR36780944",
+    "collection_date": "2025-12-29",
+    "isolation_source": "wastewater"
+  },
+  "SRR36861624": {
+    "lat": 33.04,
+    "lon": -83.643,
+    "label": "Georgia, (2025-12-30)",
+    "accession": "SRR36861624",
+    "collection_date": "2025-12-30",
+    "isolation_source": "wastewater"
+  },
+  "SRR36861625": {
+    "lat": 33.04,
+    "lon": -83.643,
+    "label": "Georgia, (2025-12-31)",
+    "accession": "SRR36861625",
+    "collection_date": "2025-12-31",
+    "isolation_source": "wastewater"
+  },
+  "SRR37567371": {
+    "lat": 42.165,
+    "lon": -74.948,
+    "label": "New York, (2025-10-05)",
+    "accession": "SRR37567371",
+    "collection_date": "2025-10-05",
+    "isolation_source": "wastewater"
+  },
+  "SRR37567372": {
+    "lat": 42.165,
+    "lon": -74.948,
+    "label": "New York, (2025-10-05)",
+    "accession": "SRR37567372",
+    "collection_date": "2025-10-05",
+    "isolation_source": "wastewater"
+  },
+  "SRR37567373": {
+    "lat": 42.165,
+    "lon": -74.948,
+    "label": "New York, (2025-10-05)",
+    "accession": "SRR37567373",
+    "collection_date": "2025-10-05",
+    "isolation_source": "wastewater"
+  },
+  "SRR38537823": {
+    "lat": 40.15,
+    "lon": -111.862,
+    "label": "Utah, (2026-04-28)",
+    "accession": "SRR38537823",
+    "collection_date": "2026-04-28",
+    "isolation_source": "wastewater"
+  },
+  "SRR38537824": {
+    "lat": 40.15,
+    "lon": -111.862,
+    "label": "Utah, (2026-04-28)",
+    "accession": "SRR38537824",
+    "collection_date": "2026-04-28",
+    "isolation_source": "wastewater"
+  },
+  "SRR38537825": {
+    "lat": 40.15,
+    "lon": -111.862,
+    "label": "Utah, (2026-04-28)",
+    "accession": "SRR38537825",
+    "collection_date": "2026-04-28",
+    "isolation_source": "wastewater"
+  },
+  "SRR38537826": {
+    "lat": 40.15,
+    "lon": -111.862,
+    "label": "Utah, (2026-04-28)",
+    "accession": "SRR38537826",
+    "collection_date": "2026-04-28",
+    "isolation_source": "wastewater"
+  },
+  "SRR38537827": {
+    "lat": 40.15,
+    "lon": -111.862,
+    "label": "Utah, (2026-04-28)",
+    "accession": "SRR38537827",
+    "collection_date": "2026-04-28",
+    "isolation_source": "wastewater"
+  },
   "cleaned_SRR35556007": {
     "lat": 40.093,
     "lon": -105.371,

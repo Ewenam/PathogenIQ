@@ -42,7 +42,7 @@ C_ABUN = "#4C72B0"   # blue
 C_FULL = "#C44E52"   # red
 C_GAIN = "#DD8452"   # orange shade for the window
 
-fig, ax = plt.subplots(figsize=(3.4, 2.5))  # single IEEE column
+fig, ax = plt.subplots(figsize=(3.6, 2.6))  # single IEEE column
 
 # Shade the borderline window where community signal adds the most
 if gain.max() > 0.05:
@@ -51,16 +51,17 @@ if gain.max() > 0.05:
         ax.axvspan(window.min(), window.max(), color=C_GAIN, alpha=0.15,
                    label="Community-signal window")
 
-ax.plot(levels, abun, "-o", color=C_ABUN, ms=4, lw=1.5, label="Abundance-only")
+ax.plot(levels, abun, "-o", color=C_ABUN, ms=6, lw=2.0, label="Abundance-only")
 ax.fill_between(levels, abun_lo, abun_hi, color=C_ABUN, alpha=0.15)
-ax.plot(levels, full, "-s", color=C_FULL, ms=4, lw=1.5, label="Full PathogenIQ")
+ax.plot(levels, full, "--s", color=C_FULL, ms=5, lw=1.6, label="Full PathogenIQ",
+        markerfacecolor="none", markeredgewidth=1.4)
 ax.fill_between(levels, full_lo, full_hi, color=C_FULL, alpha=0.15)
 
-ax.set_xlabel("Per-pathogen abundance (%)", fontsize=8)
-ax.set_ylabel("Alert rate", fontsize=8)
-ax.set_ylim(-0.03, 1.03)
-ax.tick_params(labelsize=7)
-ax.legend(fontsize=6.5, loc="lower right", framealpha=0.9)
+ax.set_xlabel("Per-pathogen abundance (%)", fontsize=12)
+ax.set_ylabel("Alert rate", fontsize=12)
+ax.set_ylim(-0.03, 1.08)
+ax.tick_params(labelsize=10)
+ax.legend(fontsize=10, loc="lower right", framealpha=0.9)
 ax.grid(True, alpha=0.25, lw=0.5)
 fig.tight_layout(pad=0.4)
 
