@@ -1047,6 +1047,17 @@ svg.leaflet-image-layer.leaflet-interactive path {
   .upload-rank-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 12px; color: var(--text2); }
   .upload-rank-row select { background: var(--bg3); border: 1px solid var(--border);
     color: var(--text); border-radius: 6px; padding: 5px 10px; font-size: 12px; }
+  .advanced-options { margin-bottom: 14px; }
+  .advanced-options summary { cursor: pointer; font-size: 12px; color: var(--text2); padding: 4px 0; }
+  .advanced-options summary:hover { color: var(--text); }
+  .advanced-options-body { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 2px 2px; }
+  .advanced-options-body label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text2); }
+  .advanced-options-body input[type="number"], .advanced-options-body select, .advanced-options-body input[type="file"] {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 5px 8px; font-size: 12px; }
+  .advanced-options-body .checkbox-row { flex-direction: row; align-items: center; gap: 6px; grid-column: span 2; }
+  .advanced-options-body .checkbox-row input { margin: 0; }
+  .advanced-options-body .full-row { grid-column: span 2; }
   .upload-progress { margin-top: 10px; }
   .progress-bar { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
   .progress-fill { height: 100%; background: var(--accent); border-radius: 3px;
@@ -1213,6 +1224,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button class="tab-btn" id="tab-map" onclick="toggleView('map')">🗺 Map</button>
         <button class="tab-btn" id="tab-network" onclick="toggleView('network')">⬡ Network</button>
         <button class="tab-btn" id="tab-heatmap" onclick="toggleView('heatmap')">▦ Heatmap</button>
+        <button class="tab-btn" id="tab-outbreak" onclick="toggleView('outbreak')">🌳 Outbreak</button>
+        <button class="tab-btn" id="tab-plan" onclick="toggleView('plan')">🧮 Plan</button>
       </div>
       <div class="search-wrap">
         <input class="search-input" id="site-search" type="search"
@@ -1299,6 +1312,65 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
     </div>
 
+    <!-- OUTBREAK view -->
+    <div id="view-outbreak" style="display:none">
+      <div id="outbreak-empty" style="text-align:center;padding:48px 0;color:#666;display:none">
+        Not enough samples for outbreak similarity (need ≥ 3) — run the pipeline first.
+      </div>
+      <div id="outbreak-wrap" style="overflow-x:auto;display:none">
+        <canvas id="outbreak-canvas" style="display:block"></canvas>
+      </div>
+      <div id="outbreak-tooltip" style="position:fixed;background:#1e2533;border:1px solid #2d3748;
+        border-radius:6px;padding:6px 10px;font-size:12px;color:#e2e8f0;pointer-events:none;
+        display:none;z-index:9999"></div>
+      <div id="outbreak-legend" style="display:none;margin-top:8px;font-size:12px;color:#888">
+        Bray-Curtis dissimilarity dendrogram &nbsp;·&nbsp; red leaves = sample in a flagged-containing cluster
+        &nbsp;·&nbsp; shorter merge height = more similar composition (possible shared source)
+      </div>
+      <div id="outbreak-clusters-list" style="margin-top:14px"></div>
+    </div>
+
+    <!-- PLAN view -->
+    <div id="view-plan" style="display:none">
+      <div class="plan-form" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-bottom:16px">
+        <label style="font-size:12px;color:#8b949e">Prevalence
+          <input id="plan-prevalence" type="number" step="any" min="0" value="0.0001"
+                 style="display:block;width:130px;background:#0d1117;border:1px solid #2d3748;color:#e2e8f0;border-radius:6px;padding:6px 8px">
+        </label>
+        <label style="font-size:12px;color:#8b949e">Depth (optional)
+          <input id="plan-depth" type="number" step="1" min="0" value=""
+                 style="display:block;width:130px;background:#0d1117;border:1px solid #2d3748;color:#e2e8f0;border-radius:6px;padding:6px 8px">
+        </label>
+        <label style="font-size:12px;color:#8b949e">Min reads
+          <input id="plan-min-reads" type="number" step="1" min="1" value="1"
+                 style="display:block;width:100px;background:#0d1117;border:1px solid #2d3748;color:#e2e8f0;border-radius:6px;padding:6px 8px">
+        </label>
+        <label style="font-size:12px;color:#8b949e">Cost / 1M reads ($)
+          <input id="plan-cost-per-million" type="number" step="any" min="0" value="5.0"
+                 style="display:block;width:120px;background:#0d1117;border:1px solid #2d3748;color:#e2e8f0;border-radius:6px;padding:6px 8px">
+        </label>
+        <label style="font-size:12px;color:#8b949e">Sample prep cost ($)
+          <input id="plan-prep-cost" type="number" step="any" min="0" value="50.0"
+                 style="display:block;width:120px;background:#0d1117;border:1px solid #2d3748;color:#e2e8f0;border-radius:6px;padding:6px 8px">
+        </label>
+        <button onclick="runPlanCalculator()" style="background:var(--accent);border:none;color:#0d1117;
+          padding:8px 18px;border-radius:6px;cursor:pointer;font-weight:600">Calculate</button>
+      </div>
+      <div id="plan-error" style="color:#f85149;font-size:13px;margin-bottom:10px;display:none"></div>
+      <div id="plan-current" style="font-size:13px;color:#c0cfdf;margin-bottom:12px;display:none"></div>
+      <table id="plan-targets-table" style="display:none;width:100%;max-width:480px;border-collapse:collapse;margin-bottom:18px">
+        <thead><tr>
+          <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #2d3748;color:#8b949e;font-size:12px">Confidence</th>
+          <th style="text-align:right;padding:6px 10px;border-bottom:1px solid #2d3748;color:#8b949e;font-size:12px">Required Depth</th>
+          <th style="text-align:right;padding:6px 10px;border-bottom:1px solid #2d3748;color:#8b949e;font-size:12px">Cost ($)</th>
+        </tr></thead>
+        <tbody id="plan-targets-tbody"></tbody>
+      </table>
+      <div style="height:260px;display:none" id="plan-chart-wrap">
+        <canvas id="plan-chart"></canvas>
+      </div>
+    </div>
+
   </div>
 
   <!-- ── Right column ── -->
@@ -1317,6 +1389,26 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
 <script>
 const API = '';
+
+// In PATHOGENIQ_MODE=saas, every API call needs the Supabase access token
+// attached as a Bearer header. This patches window.fetch once, globally, so
+// none of the call sites below need to change. In selfhosted mode there's
+// never a token in localStorage, so this is a no-op and behavior is identical.
+(function () {
+  const _origFetch = window.fetch.bind(window);
+  window.fetch = async function (url, opts = {}) {
+    const token = localStorage.getItem('piq_token');
+    if (token && typeof url === 'string' && url.startsWith(API + '/api/')) {
+      opts = { ...opts, headers: { ...(opts.headers || {}), Authorization: `Bearer ${token}` } };
+    }
+    const res = await _origFetch(url, opts);
+    if (res.status === 401 && typeof url === 'string' && url.startsWith(API + '/api/')) {
+      window.location.href = '/login';
+    }
+    return res;
+  };
+})();
+
 let _sites = [];
 let _locations = {};
 let _sortKey = 'score';
@@ -1328,6 +1420,8 @@ let _focusedRow = -1;
 let _filteredSites = [];
 let _scoreChart = null;
 let _cusumChart = null;
+let _rarefactionChart = null;
+let _compositionChart = null;
 let _map = null;
 let _mapMarkers = {};
 
@@ -1417,7 +1511,7 @@ async function loadLocations() {
 // ── View toggle ───────────────────────────────────────────────────────────────
 
 function toggleView(view) {
-  ['table','map','network','heatmap'].forEach(v => {
+  ['table','map','network','heatmap','outbreak','plan'].forEach(v => {
     document.getElementById('view-' + v).style.display = v === view ? '' : 'none';
     document.getElementById('tab-' + v).classList.toggle('active', v === view);
   });
@@ -1428,6 +1522,7 @@ function toggleView(view) {
   }
   if (view === 'network') initNetworkView();
   if (view === 'heatmap') initHeatmapView();
+  if (view === 'outbreak') initOutbreakView();
 }
 
 // ── Search + filter ───────────────────────────────────────────────────────────
@@ -1678,7 +1773,13 @@ async function selectSite(name) {
   const siteData2 = _sites.find(s => s.name === name);
   renderAMR(siteData2?.amr_annotations || []);
   renderLineage(siteData2?.lineage_annotations || []);
+  renderRarefactionChart(siteData2?.rarefaction || null);
 
+  if (!_hmData) {
+    const hmResp = await safeFetch('/api/abundance_matrix');
+    if (hmResp) _hmData = await hmResp.json();
+  }
+  renderCompositionChart(name);
 }
 
 function closeDetail() {
@@ -1769,6 +1870,83 @@ function renderCUSUMChart(dates, cusumVals, threshold) {
       ]
     },
     options: { ..._chartDefaults, scales: { x: _chartDefaults.scales.x, y: { ..._chartDefaults.scales.y, min: 0 } } },
+  });
+}
+
+function renderRarefactionChart(rare) {
+  const box = document.getElementById('rarefaction-box');
+  if (!rare || !rare.depths || !rare.depths.length) {
+    box.style.display = 'none';
+    return;
+  }
+  box.style.display = '';
+  const ctx = document.getElementById('rarefaction-chart').getContext('2d');
+  if (_rarefactionChart) _rarefactionChart.destroy();
+  _rarefactionChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: rare.depths,
+      datasets: [{
+        label: 'Expected taxa detected',
+        data: rare.richness,
+        borderColor: '#3fb950',
+        backgroundColor: 'rgba(63,185,80,0.08)',
+        borderWidth: 2, pointRadius: 2, fill: true, tension: 0.25,
+      }],
+    },
+    options: {
+      ..._chartDefaults,
+      scales: {
+        x: { ..._chartDefaults.scales.x, type: 'logarithmic', title: { display: true, text: 'Subsampled reads', color: '#8b949e' } },
+        y: { ..._chartDefaults.scales.y, min: 0, title: { display: true, text: 'Taxa detected', color: '#8b949e' } },
+      },
+    },
+  });
+}
+
+function renderCompositionChart(sampleName) {
+  const box = document.getElementById('composition-box');
+  if (!_hmData || !_hmData.taxa || !_hmData.taxa.length) {
+    box.style.display = 'none';
+    return;
+  }
+  const colIdx = _hmData.samples.indexOf(sampleName);
+  if (colIdx < 0) {
+    box.style.display = 'none';
+    return;
+  }
+  box.style.display = '';
+
+  const pairs = _hmData.taxa.map((taxon, i) => ({ taxon, value: _hmData.values[i][colIdx] || 0 }))
+    .filter(p => p.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  const top = pairs.slice(0, 8);
+  const otherSum = pairs.slice(8).reduce((s, p) => s + p.value, 0);
+  const labels = top.map(p => p.taxon);
+  const data = top.map(p => p.value);
+  if (otherSum > 0) { labels.push('Other'); data.push(otherSum); }
+
+  const palette = ['#58a6ff','#bc8cff','#3fb950','#d29922','#f85149','#ff7b72','#39c5cf','#db61a2','#8b949e'];
+
+  const ctx = document.getElementById('composition-chart').getContext('2d');
+  if (_compositionChart) _compositionChart.destroy();
+  _compositionChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: labels.map((_, i) => palette[i % palette.length]),
+        borderColor: '#0d1117', borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { color: '#8b949e', font: { size: 10 }, boxWidth: 10 } },
+      },
+    },
   });
 }
 
@@ -2267,6 +2445,221 @@ function renderHeatmap() {
   canvas.onmouseleave = () => { tt.style.display = 'none'; };
 }
 
+// ── Outbreak dendrogram ──────────────────────────────────────────────────────
+
+let _obData = null;
+
+async function initOutbreakView() {
+  if (_obData) { renderOutbreak(); return; }
+  const resp = await safeFetch('/api/outbreak_clusters');
+  if (!resp) return;
+  _obData = await resp.json();
+
+  if (!_obData.dendrogram || !_obData.dendrogram.sample_order || !_obData.dendrogram.sample_order.length) {
+    document.getElementById('outbreak-empty').style.display = '';
+    return;
+  }
+  document.getElementById('outbreak-wrap').style.display = '';
+  document.getElementById('outbreak-legend').style.display = '';
+  renderOutbreak();
+}
+
+function renderOutbreak() {
+  const { dendrogram, clusters } = _obData;
+  const { linkage, sample_order } = dendrogram;
+  const n = sample_order.length;
+
+  const flaggedSet = new Set();
+  (clusters || []).forEach(c => { if (c.contains_flagged && c.members.length > 1) c.members.forEach(m => flaggedSet.add(m)); });
+
+  // leaf x-positions in order 0..n-1; node x = mean of children x; node y = merge distance
+  const leafX = {};
+  sample_order.forEach((_, i) => { leafX[i] = i; });
+  const nodeX = { ...leafX };
+  const nodeY = {};
+  sample_order.forEach((_, i) => { nodeY[i] = 0; });
+
+  let maxDist = 0;
+  linkage.forEach((row, idx) => {
+    const [a, b, dist] = row;
+    const nodeId = n + idx;
+    nodeX[nodeId] = (nodeX[a] + nodeX[b]) / 2;
+    nodeY[nodeId] = dist;
+    maxDist = Math.max(maxDist, dist);
+  });
+  maxDist = maxDist || 1;
+
+  const LABEL_H = 90;
+  const TOP_PAD = 20;
+  const PLOT_H = 260;
+  const COL_W = Math.max(24, Math.min(60, Math.floor(900 / n)));
+  const W = Math.max(400, n * COL_W + 40);
+  const H = TOP_PAD + PLOT_H + LABEL_H;
+
+  const canvas = document.getElementById('outbreak-canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  const xOf = xi => 30 + xi * COL_W;
+  const yOf = dist => TOP_PAD + PLOT_H - (dist / maxDist) * (PLOT_H - 10);
+
+  ctx.strokeStyle = '#2d3748';
+  ctx.lineWidth = 1.5;
+  linkage.forEach((row, idx) => {
+    const [a, b] = row;
+    const nodeId = n + idx;
+    const x1 = xOf(nodeX[a]), y1 = yOf(nodeY[a]);
+    const x2 = xOf(nodeX[b]), y2 = yOf(nodeY[b]);
+    const yMerge = yOf(nodeY[nodeId]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1); ctx.lineTo(x1, yMerge); ctx.lineTo(x2, yMerge); ctx.lineTo(x2, y2);
+    ctx.stroke();
+  });
+
+  // Leaf labels + markers
+  ctx.save();
+  ctx.font = '11px sans-serif';
+  sample_order.forEach((name, i) => {
+    const x = xOf(i);
+    const yLeaf = yOf(0);
+    const isFlagged = flaggedSet.has(name);
+    ctx.fillStyle = isFlagged ? '#f85149' : '#58a6ff';
+    ctx.beginPath();
+    ctx.arc(x, yLeaf, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.save();
+    ctx.translate(x, yLeaf + 8);
+    ctx.rotate(Math.PI / 2.5);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = isFlagged ? '#f85149' : '#8b949e';
+    const lbl = name.length > 16 ? name.slice(0, 15) + '…' : name;
+    ctx.fillText(lbl, 0, 0);
+    ctx.restore();
+  });
+  ctx.restore();
+
+  // Tooltip on hover near a leaf
+  const tt = document.getElementById('outbreak-tooltip');
+  canvas.onmousemove = e => {
+    const r = canvas.getBoundingClientRect();
+    const mx = (e.clientX - r.left) * (canvas.width / r.width);
+    const my = (e.clientY - r.top) * (canvas.height / r.height);
+    let hit = null;
+    sample_order.forEach((name, i) => {
+      const x = xOf(i), y = yOf(0);
+      if (Math.hypot(x - mx, y - my) < 8) hit = name;
+    });
+    if (hit) {
+      tt.textContent = hit + (flaggedSet.has(hit) ? ' (in flagged cluster)' : '');
+      tt.style.left = (e.clientX + 12) + 'px';
+      tt.style.top = (e.clientY - 24) + 'px';
+      tt.style.display = '';
+    } else {
+      tt.style.display = 'none';
+    }
+  };
+  canvas.onmouseleave = () => { tt.style.display = 'none'; };
+
+  // Cluster summary list
+  const listEl = document.getElementById('outbreak-clusters-list');
+  if (clusters && clusters.length) {
+    listEl.innerHTML = clusters
+      .filter(c => c.members.length > 1)
+      .map(c => {
+        const flagClass = c.contains_flagged ? 'color:#f85149;font-weight:600' : 'color:#8b949e';
+        return `<div style="padding:8px 0;border-bottom:1px solid #21262d;font-size:13px">
+          <span style="${flagClass}">${c.contains_flagged ? '⚠ ' : ''}${c.members.length} samples</span>
+          &nbsp;·&nbsp; max distance ${c.max_distance.toFixed(3)}
+          &nbsp;·&nbsp; ${c.members.join(', ')}
+        </div>`;
+      }).join('') || '<div style="color:#666;font-size:13px">No multi-sample clusters at this threshold.</div>';
+  } else {
+    listEl.innerHTML = '';
+  }
+}
+
+// ── Planning calculator ─────────────────────────────────────────────────────
+
+let _planChart = null;
+
+async function runPlanCalculator() {
+  const prevalence = parseFloat(document.getElementById('plan-prevalence').value);
+  const depthRaw = document.getElementById('plan-depth').value;
+  const depth = depthRaw === '' ? 0 : parseInt(depthRaw, 10);
+  const minReads = parseInt(document.getElementById('plan-min-reads').value, 10) || 1;
+  const costPerMillion = parseFloat(document.getElementById('plan-cost-per-million').value) || 0;
+  const prepCost = parseFloat(document.getElementById('plan-prep-cost').value) || 0;
+
+  const errEl = document.getElementById('plan-error');
+  errEl.style.display = 'none';
+
+  const params = new URLSearchParams({
+    prevalence: prevalence, depth: depth, min_reads: minReads,
+    cost_per_million_reads: costPerMillion, sample_prep_cost: prepCost,
+  });
+
+  let resp;
+  try {
+    resp = await fetch(API + '/api/plan?' + params.toString());
+  } catch {
+    errEl.textContent = 'Network error contacting the planning API.';
+    errEl.style.display = '';
+    return;
+  }
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    errEl.textContent = body.detail || `Request failed (${resp.status})`;
+    errEl.style.display = '';
+    return;
+  }
+  const data = await resp.json();
+
+  const currentEl = document.getElementById('plan-current');
+  if (data.current) {
+    currentEl.style.display = '';
+    currentEl.innerHTML = `At depth <strong>${depth.toLocaleString()}</strong>: ` +
+      `sensitivity <strong>${(data.current.sensitivity * 100).toFixed(1)}%</strong> &nbsp;·&nbsp; ` +
+      `cost <strong>$${data.current.cost.toFixed(2)}</strong>`;
+  } else {
+    currentEl.style.display = 'none';
+  }
+
+  const tbody = document.getElementById('plan-targets-tbody');
+  tbody.innerHTML = Object.entries(data.targets).map(([target, vals]) => `
+    <tr>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d">${(parseFloat(target) * 100).toFixed(0)}%</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d;text-align:right">${vals.depth.toLocaleString()}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #21262d;text-align:right">$${vals.cost.toFixed(2)}</td>
+    </tr>`).join('');
+  document.getElementById('plan-targets-table').style.display = '';
+
+  document.getElementById('plan-chart-wrap').style.display = '';
+  const ctx = document.getElementById('plan-chart').getContext('2d');
+  if (_planChart) _planChart.destroy();
+  _planChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.sweep.map(p => p.depth.toLocaleString()),
+      datasets: [{
+        label: 'Sensitivity',
+        data: data.sweep.map(p => p.sensitivity),
+        borderColor: '#58a6ff',
+        backgroundColor: 'rgba(88,166,255,0.08)',
+        borderWidth: 2, pointRadius: 0, fill: true, tension: 0.25,
+      }],
+    },
+    options: {
+      ..._chartDefaults,
+      scales: {
+        x: { ..._chartDefaults.scales.x, title: { display: true, text: 'Depth', color: '#8b949e' } },
+        y: { ..._chartDefaults.scales.y, min: 0, max: 1, title: { display: true, text: 'Sensitivity', color: '#8b949e' } },
+      },
+    },
+  });
+}
+
 // helper: fetch with API prefix, return null on failure
 async function safeFetch(path) {
   try {
@@ -2480,6 +2873,14 @@ async function runUploadedPipeline() {
   const form = new FormData();
   _uploadFiles.forEach(f => form.append('files', f));
   form.append('rank', rank);
+  form.append('format', document.getElementById('upload-format').value);
+  form.append('alert_threshold', document.getElementById('upload-alert-threshold').value);
+  form.append('min_prevalence', document.getElementById('upload-min-prevalence').value);
+  form.append('min_total_reads', document.getElementById('upload-min-total-reads').value);
+  form.append('use_vqvae', document.getElementById('upload-use-vqvae').checked);
+  form.append('rank_bump', document.getElementById('upload-rank-bump').checked);
+  const extSignalsFile = document.getElementById('upload-external-signals').files[0];
+  if (extSignalsFile) form.append('external_signals', extSignalsFile);
 
   try {
     const r = await fetch(API + '/api/upload-run', { method: 'POST', body: form });
@@ -2560,6 +2961,17 @@ setInterval(loadAll, 60000);
         </div>
       </div>
 
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="chart-box" id="rarefaction-box" style="margin-bottom:0;display:none">
+          <div class="chart-label">Rarefaction Curve (interpolated up to current depth)</div>
+          <canvas id="rarefaction-chart" class="chart-canvas"></canvas>
+        </div>
+        <div class="chart-box" id="composition-box" style="margin-bottom:0;display:none">
+          <div class="chart-label">Sample Composition (top 8 taxa)</div>
+          <canvas id="composition-chart" class="chart-canvas"></canvas>
+        </div>
+      </div>
+
       <div class="section-title" style="margin-top:14px">Detected Pathogens</div>
       <div id="detail-pathogens" class="pathogen-list"></div>
 
@@ -2613,6 +3025,40 @@ setInterval(loadAll, 60000);
         </select>
         <span style="margin-left:auto;font-size:11px;color:var(--text2)" id="upload-file-count">No files selected</span>
       </div>
+
+      <details class="advanced-options">
+        <summary>Advanced options</summary>
+        <div class="advanced-options-body">
+          <label>Report format
+            <select id="upload-format">
+              <option value="auto">Auto-detect</option>
+              <option value="kraken2">Kraken2</option>
+              <option value="bracken">Bracken</option>
+              <option value="metaphlan">MetaPhlAn</option>
+            </select>
+          </label>
+          <label>Alert threshold
+            <input type="number" id="upload-alert-threshold" value="0.6" min="0" max="1" step="0.05">
+          </label>
+          <label>Min prevalence
+            <input type="number" id="upload-min-prevalence" value="0.1" min="0" max="1" step="0.05">
+          </label>
+          <label>Min total reads
+            <input type="number" id="upload-min-total-reads" value="50" min="0" step="10">
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" id="upload-rank-bump">
+            Bump low-abundance species to genus instead of dropping
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" id="upload-use-vqvae">
+            Enable VQ-VAE novelty detection
+          </label>
+          <label class="full-row">External signals file (optional)
+            <input type="file" id="upload-external-signals">
+          </label>
+        </div>
+      </details>
 
       <button class="run-btn" id="run-pipeline-btn" onclick="runUploadedPipeline()" disabled>
         Run PathogenIQ Pipeline

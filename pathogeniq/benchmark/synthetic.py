@@ -197,3 +197,81 @@ def generate_scenario(
 def generate_all_scenarios(seed: int = 42) -> list[SyntheticDataset]:
     """Generate datasets for all standard benchmark scenarios."""
     return [generate_scenario(s, seed=seed + i) for i, s in enumerate(SCENARIOS)]
+
+
+# Approximate theoretical (genomic-DNA-based) composition of the ZymoBIOMICS
+# Microbial Community Standard (Zymo Research, cat. #D6300), bacterial
+# fraction only — excludes the standard's two yeast components (S. cerevisiae,
+# C. neoformans), which fall outside PATHOGEN_DB's bacteria/virus/fungi-genus
+# scope. Figures are illustrative/from public documentation — verify against
+# Zymo's current Certificate of Analysis before citing in publication.
+ZYMOBIOMICS_COMPOSITION: dict[str, float] = {
+    "Listeria": 0.141, "Pseudomonas": 0.042, "Bacillus": 0.174,
+    "Escherichia": 0.101, "Salmonella": 0.104, "Lactobacillus": 0.184,
+    "Enterococcus": 0.099, "Staphylococcus": 0.155,
+}
+
+
+def generate_mock_community(
+    composition: Optional[dict[str, float]] = None,
+    n_replicates: int = 5,
+    total_reads_range: tuple[int, int] = (100_000, 500_000),
+    add_noise: bool = True,
+    seed: int = 42,
+) -> SyntheticDataset:
+    """
+    Generate replicate samples matching a fully-defined reference community
+    composition (every taxon has a known abundance — no separate
+    "background"), unlike generate_scenario's injected-pathogen-into-
+    background model. Used for ground-truth validation against a known
+    mock community (e.g. ZymoBIOMICS), mirroring how MARTi validated
+    against the same standard.
+    """
+    from ..scoring.risk import PATHOGEN_DB
+
+    if composition is None:
+        composition = ZYMOBIOMICS_COMPOSITION
+
+    rng = np.random.default_rng(seed)
+    taxa = list(composition.keys())
+    fracs = np.array(list(composition.values()), dtype=float)
+    fracs = fracs / fracs.sum()  # normalize to sum to 1
+
+    total_reads = rng.integers(*total_reads_range, size=n_replicates)
+    sample_names = [f"zymo_rep_{i+1:02d}" for i in range(n_replicates)]
+
+    expected = fracs[:, None] * total_reads[None, :]
+    if add_noise:
+        counts = rng.poisson(expected)
+    else:
+        counts = np.round(expected).astype(int)
+
+    count_matrix = pd.DataFrame(counts, index=taxa, columns=sample_names)
+    count_matrix.index.name = "taxon"
+
+    total_pathogen_fraction = sum(f for g, f in zip(taxa, fracs) if g in PATHOGEN_DB)
+    gt = pd.DataFrame(
+        {
+            "is_contaminated": [True] * n_replicates,
+            "total_pathogen_fraction": [round(total_pathogen_fraction, 4)] * n_replicates,
+            "expected_alert": [True] * n_replicates,
+        },
+        index=sample_names,
+    )
+
+    intended_fracs = {g: round(float(f), 5) for g, f in zip(taxa, fracs)}
+    pathogen_fractions = {name: dict(intended_fracs) for name in sample_names}
+
+    scenario = Scenario(
+        name="zymobiomics_mock_community",
+        description="ZymoBIOMICS D6300 reference community — ground-truth validation",
+        n_samples=n_replicates,
+        expected_alert=True,
+    )
+
+    return SyntheticDataset(
+        scenario=scenario,
+        count_matrix=count_matrix,
+        ground_truth=gt,
+        pathogen_fractions=pathogen_fractions,
+    )

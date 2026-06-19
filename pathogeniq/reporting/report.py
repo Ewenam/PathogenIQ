@@ -20,7 +20,9 @@ def to_dict(risk_scores: list[RiskScore], meta: dict | None = None,
             baselines=None, cusum_results=None, trend_results=None,
             graph_data: dict | None = None,
             cluster_data: dict | None = None,
-            abundance_matrix: dict | None = None) -> dict:
+            abundance_matrix: dict | None = None,
+            outbreak_data: dict | None = None,
+            rarefaction_data: dict | None = None) -> dict:
     return {
         "generated_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat().replace('+00:00', 'Z'),
         "metadata": meta or {},
@@ -34,6 +36,7 @@ def to_dict(risk_scores: list[RiskScore], meta: dict | None = None,
         "network": graph_data or {"nodes": [], "edges": []},
         "clusters": cluster_data or {"n_clusters": 0, "assignments": {}, "differential": []},
         "abundance_matrix": abundance_matrix or {"taxa": [], "samples": [], "values": []},
+        "outbreak_clusters": outbreak_data or {"dendrogram": None, "clusters": []},
         "samples": [
             {
                 "name": r.sample_name,
@@ -45,6 +48,8 @@ def to_dict(risk_scores: list[RiskScore], meta: dict | None = None,
                 "breakdown": r.breakdown,
                 "amr_annotations": r.amr_annotations,
                 "lineage_annotations": r.lineage_annotations,
+                "external_validation": r.external_validation,
+                "rarefaction": (rarefaction_data or {}).get(r.sample_name),
                 "temporal": {
                     "z_score": round(baselines[r.sample_name].z_score, 3) if baselines and r.sample_name in baselines else None,
                     "pct_above_baseline": baselines[r.sample_name].pct_above_baseline if baselines and r.sample_name in baselines else None,
@@ -67,12 +72,15 @@ def save_json(risk_scores: list[RiskScore], output_path: str | Path, meta: dict 
               baselines=None, cusum_results=None, trend_results=None,
               graph_data: dict | None = None,
               cluster_data: dict | None = None,
-              abundance_matrix: dict | None = None):
+              abundance_matrix: dict | None = None,
+              outbreak_data: dict | None = None,
+              rarefaction_data: dict | None = None):
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(to_dict(risk_scores, meta, baselines, cusum_results, trend_results,
-                          graph_data, cluster_data, abundance_matrix), f, indent=2)
+                          graph_data, cluster_data, abundance_matrix, outbreak_data,
+                          rarefaction_data), f, indent=2)
     print(f"  JSON report → {output_path}")
 
 

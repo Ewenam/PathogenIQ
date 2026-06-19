@@ -89,14 +89,15 @@ def lineage_annotations_to_dict(annotations: list[LineageAnnotation]) -> list[di
     ]
 
 
-def load_species_from_report(report_path, threshold: float = 0.001) -> list[LineageAnnotation]:
+def load_species_from_report(report_path, threshold: float = 0.001, fmt: str = "auto") -> list[LineageAnnotation]:
     """
-    Convenience: load a single .report file at species rank and annotate.
+    Convenience: load a single report file at species rank and annotate.
     Useful for standalone lineage analysis without running the full pipeline.
+    `fmt` accepts "auto" (content-sniffed), "kraken2", "bracken", or "metaphlan".
     """
-    from pathogeniq.ingestion.reader import load_kraken_report
+    from pathogeniq.ingestion.formats import load_report
     from pathlib import Path
-    series = load_kraken_report(Path(report_path), rank="S")
+    series, _resolved = load_report(Path(report_path), rank="S", fmt=fmt)
     total = series.sum()
     if total == 0:
         return []

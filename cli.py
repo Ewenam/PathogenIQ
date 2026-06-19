@@ -18,6 +18,9 @@ def cli():
 @click.option("--rank", "-r", default="G", show_default=True,
               type=click.Choice(["G", "S", "F"]),
               help="Taxonomic rank: G=genus, S=species, F=family.")
+@click.option("--format", "-f", "report_format", default="auto", show_default=True,
+              type=click.Choice(["auto", "kraken2", "bracken", "metaphlan"]),
+              help="Classifier report format. 'auto' content-sniffs each file.")
 @click.option("--output", "-o", default="./reports", show_default=True,
               help="Output directory for reports.")
 @click.option("--alert-threshold", default=0.6, show_default=True,
@@ -26,6 +29,8 @@ def cli():
               help="Run ESMFold structure prediction on flagged novel pathogens.")
 @click.option("--use-vqvae", is_flag=True, default=False,
               help="Enable VQ-VAE sequence-level novelty detection (requires trained model).")
+@click.option("--rank-bump", is_flag=True, default=False,
+              help="Bump low-prevalence/low-read species up to genus instead of dropping them.")
 @click.option("--alert-email", is_flag=True, default=False,
               help="Send email alerts on HIGH/CRITICAL findings (requires PATHOGENIQ_SMTP_* env vars).")
 @click.option("--alert-slack", is_flag=True, default=False,
@@ -33,20 +38,28 @@ def cli():
 @click.option("--run-date", default=None,
               help="ISO date (YYYY-MM-DD) to stamp this run in the history store. "
                    "Defaults to today. Use this when replaying historical samples.")
+@click.option("--external-signals", default=None, type=click.Path(exists=True),
+              help="Path to a site/date/value CSV or TSV (e.g. qPCR, ddPCR, case counts) "
+                   "to cross-validate temporal alerts against.")
 @click.option("--quiet", is_flag=True, default=False, help="Suppress progress output.")
-def run(input_path, config, rank, output, alert_threshold, characterize,
-        use_vqvae, alert_email, alert_slack, run_date, quiet):
+def run(input_path, config, rank, report_format, output, alert_threshold, characterize,
+        use_vqvae, rank_bump, alert_email, alert_slack, run_date, external_signals, quiet):
     """
-    Run the full PathogenIQ pipeline on Kraken2 reports or a count matrix.
+    Run the full PathogenIQ pipeline on classifier reports or a count matrix.
 
-    INPUT_PATH: directory of *.report files, or path to a taxa×samples TSV/CSV.
+    INPUT_PATH: directory of Kraken2/Bracken/MetaPhlAn report files, or path to
+    a taxa×samples TSV/CSV.
 
     Examples:\n
       pathogeniq run ./kraken_reports/\n
+      pathogeniq run ./bracken_reports/ --format bracken\n
       pathogeniq run counts.tsv --rank S --output ./out --characterize\n
       pathogeniq run ./reports/ --config configs/default.yaml
     """
+    import os
     from pathogeniq.pipeline.runner import run as _run, PipelineConfig
+
+    actor = os.environ.get("PATHOGENIQ_ACTOR") or os.environ.get("USER") or "cli"
 
     if config:
         cfg = PipelineConfig.from_yaml(config)
@@ -56,6 +69,7 @@ def run(input_path, config, rank, output, alert_threshold, characterize,
         cfg = PipelineConfig(output_dir=output, alert_threshold=alert_threshold)
 
     cfg.use_vqvae = use_vqvae
+    cfg.rank_bump = rank_bump
     cfg.alert_email = alert_email
     cfg.alert_slack = alert_slack
     if run_date:
@@ -65,8 +79,11 @@ def run(input_path, config, rank, output, alert_threshold, characterize,
         input_path=input_path,
         config=cfg,
         rank=rank,
+        format=report_format,
         run_characterization=characterize,
         quiet=quiet,
+        actor=actor,
+        external_signals=external_signals,
     )
 
     alerts = results["alerts"]
@@ -166,13 +183,16 @@ def summary(report_json):
 @click.option("--seed", default=42, show_default=True, help="Random seed for synthetic data.")
 @click.option("--output", "-o", default=None,
               help="Save benchmark results to this JSON file.")
-def benchmark(alert_threshold, quick, seed, output):
+@click.option("--no-mock-community", is_flag=True, default=False,
+              help="Skip the ZymoBIOMICS mock-community validation scenario.")
+def benchmark(alert_threshold, quick, seed, output, no_mock_community):
     """
     Run the full benchmark suite against synthetic ground-truth datasets.
 
     Generates 6 controlled scenarios (negative controls, low/high contamination,
-    critical pathogens, multi-pathogen communities, novel agents) and computes
-    sensitivity, specificity, precision, and F1 for the detection pipeline.
+    critical pathogens, multi-pathogen communities, novel agents) plus a
+    ZymoBIOMICS reference-community scenario, and computes sensitivity,
+    specificity, precision, and F1 for the detection pipeline.
 
     Example:\n
       pathogeniq benchmark\n
@@ -184,6 +204,7 @@ def benchmark(alert_threshold, quick, seed, output):
         alert_threshold=alert_threshold,
         quick=quick,
         seed=seed,
+        include_mock_community=not no_mock_community,
     )
 
     if output:
@@ -361,6 +382,94 @@ def dashboard(db, report, host, port):
         port=port,
         log_level="warning",
     )
+
+
+@cli.command()
+@click.argument("report_dir", type=click.Path(exists=True, file_okay=False))
+def verify(report_dir):
+    """
+    Verify a run's provenance manifest against the files on disk today.
+
+    Re-hashes report.json's sample data and every recorded input file still
+    present on disk, comparing against the values recorded in provenance.json
+    at run time. Exits 1 if any check fails — scriptable for CI or
+    regulator-facing automation.
+
+    Example:\n
+      pathogeniq verify ./reports/\n
+      pathogeniq verify /tmp/piq_demo
+    """
+    from pathogeniq import provenance
+    from rich.console import Console
+
+    console = Console()
+    result = provenance.verify_manifest(report_dir)
+
+    for check in result["checks"]:
+        if check["passed"]:
+            console.print(f"  [green]PASS[/green]  {check['name']}  — {check['detail']}")
+        else:
+            console.print(f"  [bold red]FAIL[/bold red]  {check['name']}  — {check['detail']}")
+
+    if result["all_passed"]:
+        console.print(f"\n[bold green]All checks passed[/bold green] — {report_dir}")
+    else:
+        console.print(f"\n[bold red]Verification FAILED[/bold red] — {report_dir}")
+        raise SystemExit(1)
+
+
+@cli.command()
+@click.option("--prevalence", required=True, type=float,
+              help="Expected pathogen prevalence (fraction of reads), e.g. 0.0001.")
+@click.option("--depth", default=0, show_default=True,
+              help="Sequencing depth (total reads) to evaluate. Omit to only see required-depth targets.")
+@click.option("--min-reads", default=1, show_default=True,
+              help="Minimum reads required to call a detection.")
+@click.option("--cost-per-million-reads", default=5.0, show_default=True,
+              help="Sequencing cost per million reads ($).")
+@click.option("--sample-prep-cost", default=50.0, show_default=True,
+              help="Fixed per-sample prep cost ($).")
+def plan(prevalence, depth, min_reads, cost_per_million_reads, sample_prep_cost):
+    """
+    Pre-deployment sequencing sensitivity/cost planning calculator.
+
+    Estimates detection probability and cost for a given sequencing depth,
+    and the depth required to hit 90/95/99% detection confidence.
+
+    Example:\n
+      pathogeniq plan --prevalence 0.0001\n
+      pathogeniq plan --prevalence 0.0001 --depth 5000000
+    """
+    from pathogeniq.planning.calculator import SequencingPlan, plan_report
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+
+    try:
+        p = SequencingPlan(
+            prevalence=prevalence, depth=depth, min_reads=min_reads,
+            cost_per_million_reads=cost_per_million_reads, sample_prep_cost=sample_prep_cost,
+        )
+        report = plan_report(p)
+    except ValueError as exc:
+        console.print(f"[bold red]Error:[/bold red] {exc}")
+        raise SystemExit(1)
+
+    if report["current"]:
+        console.print(
+            f"\n[bold]At depth {depth:,}:[/bold]  "
+            f"sensitivity={report['current']['sensitivity']*100:.1f}%  "
+            f"cost=${report['current']['cost']:.2f}"
+        )
+
+    table = Table(title="Required Depth / Cost by Confidence Target", show_lines=True)
+    table.add_column("Confidence", justify="right")
+    table.add_column("Required Depth", justify="right")
+    table.add_column("Cost ($)", justify="right")
+    for target, vals in report["targets"].items():
+        table.add_row(f"{float(target)*100:.0f}%", f"{vals['depth']:,}", f"{vals['cost']:.2f}")
+    console.print(table)
 
 
 if __name__ == "__main__":

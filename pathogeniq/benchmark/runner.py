@@ -17,7 +17,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from .synthetic import SCENARIOS, generate_scenario, SyntheticDataset
+from .synthetic import SCENARIOS, generate_scenario, generate_mock_community, SyntheticDataset
 from .metrics import compute_metrics, aggregate_metrics, ScenarioMetrics
 
 
@@ -80,6 +80,7 @@ def run_benchmark(
     quick: bool = False,
     seed: int = 42,
     quiet: bool = False,
+    include_mock_community: bool = True,
 ) -> dict:
     """
     Run all benchmark scenarios and return a results dict.
@@ -119,6 +120,26 @@ def run_benchmark(
 
         if not quiet:
             _print_scenario_summary(console, metrics, dataset, risk_scores, elapsed)
+
+    if include_mock_community:
+        t0 = time.perf_counter()
+        mock_dataset = generate_mock_community(seed=seed)
+
+        mock_risk_scores = _run_scenario_pipeline(mock_dataset, alert_threshold, quick)
+
+        mock_metrics = compute_metrics(
+            scenario_name=mock_dataset.scenario.name,
+            description=mock_dataset.scenario.description,
+            risk_scores=mock_risk_scores,
+            ground_truth=mock_dataset.ground_truth,
+            alert_threshold=alert_threshold,
+        )
+        all_metrics.append(mock_metrics)
+        elapsed = time.perf_counter() - t0
+
+        if not quiet:
+            _print_scenario_summary(console, mock_metrics, mock_dataset, mock_risk_scores, elapsed)
+            _print_mock_community_caveat(console, mock_risk_scores)
 
     agg = aggregate_metrics(all_metrics)
 
@@ -255,6 +276,30 @@ def _print_aggregate(
 
     console.print(summary)
     console.print("\n[bold]PathogenIQ v0.1.0[/bold] — Benchmark complete.\n")
+
+
+def _print_mock_community_caveat(console: Console, risk_scores: list) -> None:
+    """
+    Warn that PathogenIQ's genus-level scoring can't distinguish the
+    ZymoBIOMICS standard's harmless Bacillus subtilis component from
+    Bacillus anthracis — a known, expected limitation of genus-granularity
+    classification (Kraken2 itself can't resolve this without species-level
+    confidence), not a bug in this benchmark.
+    """
+    has_bacillus = any(
+        p.get("genus") == "Bacillus"
+        for rs in risk_scores
+        for p in rs.detected_pathogens
+    )
+    if has_bacillus:
+        console.print(
+            "\n  [yellow]Note:[/yellow] [dim]ZymoBIOMICS' Bacillus component is the "
+            "harmless B. subtilis, but PATHOGEN_DB scores at genus granularity and "
+            "flags any 'Bacillus' as anthrax-tier risk. This is a known limitation "
+            "of genus-level classification (Kraken2 itself can't distinguish "
+            "B. subtilis from B. anthracis without species-level confidence), not "
+            "a benchmark failure.[/dim]\n"
+        )
 
 
 def _metrics_to_dict(m: ScenarioMetrics) -> dict:

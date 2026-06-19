@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PathogenIQ — Sign in</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#c9d1d9; --muted:#8b949e; --accent:#58a6ff; --danger:#f85149; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .card { width: 360px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 32px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  input { width: 100%; padding: 9px 10px; margin-bottom: 16px; background: #0d1117; border: 1px solid var(--border);
+          border-radius: 6px; color: var(--text); font-size: 14px; }
+  input:focus { outline: none; border-color: var(--accent); }
+  .row { display: flex; gap: 10px; }
+  button { flex: 1; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--border); cursor: pointer;
+           font-size: 13px; font-weight: 600; background: #21262d; color: var(--text); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #0d1117; }
+  button:hover { opacity: 0.9; }
+  #msg { margin-top: 14px; font-size: 13px; min-height: 18px; }
+  #msg.error { color: var(--danger); }
+  #msg.ok { color: #3fb950; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>PathogenIQ</h1>
+    <p class="sub">Sign in to your organization's biosurveillance dashboard.</p>
+    <form id="auth-form">
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" required>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <label for="org">Organization name (only needed for sign up)</label>
+      <input id="org" type="text" autocomplete="organization" placeholder="e.g. Acme Public Health Lab">
+      <div class="row">
+        <button type="button" id="signin-btn" class="primary">Sign in</button>
+        <button type="button" id="signup-btn">Sign up</button>
+      </div>
+    </form>
+    <div id="msg"></div>
+  </div>
+
+<script>
+const SUPABASE_URL = "{{SUPABASE_URL}}";
+const SUPABASE_ANON_KEY = "{{SUPABASE_ANON_KEY}}";
+
+const msgEl = document.getElementById('msg');
+function showMsg(text, kind) {
+  msgEl.textContent = text;
+  msgEl.className = kind || '';
+}
+
+async function supabaseAuth(path, body) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error_description || data.msg || 'Authentication failed');
+  return data;
+}
+
+async function bootstrapOrg(token, orgName) {
+  const form = new URLSearchParams({ org_name: orgName || 'My Organization' });
+  await fetch('/api/saas/bootstrap-org', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form,
+  });
+}
+
+async function completeLogin(session, orgName) {
+  if (!session.access_token) {
+    showMsg('Check your email to confirm your account, then sign in.', 'ok');
+    return;
+  }
+  localStorage.setItem('piq_token', session.access_token);
+  await bootstrapOrg(session.access_token, orgName);
+  window.location.href = '/';
+}
+
+document.getElementById('signin-btn').onclick = async () => {
+  showMsg('Signing in…');
+  try {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const session = await supabaseAuth('token?grant_type=password', { email, password });
+    await completeLogin(session, document.getElementById('org').value);
+  } catch (err) {
+    showMsg(err.message, 'error');
+  }
+};
+
+document.getElementById('signup-btn').onclick = async () => {
+  showMsg('Creating account…');
+  try {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const orgName = document.getElementById('org').value;
+    const session = await supabaseAuth('signup', { email, password });
+    await completeLogin(session, orgName);
+  } catch (err) {
+    showMsg(err.message, 'error');
+  }
+};
+</script>
+</body>
+</html>

@@ -18,6 +18,28 @@
 
 services:
 
+  # Local dev/test Postgres for PATHOGENIQ_MODE=saas — NOT used by selfhosted
+  # mode (which stays on SQLite). In production this is replaced by a managed
+  # Postgres connection string (e.g. Supabase) via DATABASE_URL; this service
+  # exists purely so the saas data layer is testable without a cloud account.
+  postgres:
+    image: postgres:16-alpine
+    container_name: pathogeniq-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pathogeniq
+      POSTGRES_PASSWORD: pathogeniq_dev
+      POSTGRES_DB: pathogeniq_saas
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pathogeniq"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   dashboard:
     build: .
     image: pathogeniq:latest
@@ -70,4 +92,6 @@ volumes:
   reports:
     driver: local
   pathogeniq_db:
+    driver: local
+  postgres_dev_data:
     driver: local

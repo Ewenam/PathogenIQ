@@ -41,6 +41,25 @@ def _tx(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
         raise
 
 
+# Audit/provenance columns added to `runs` after the original schema shipped.
+# Migrated in via PRAGMA table_info introspection so existing DB files upgrade
+# in place instead of needing a destructive recreate.
+_RUNS_AUDIT_COLUMNS = {
+    "pathogeniq_version": "TEXT",
+    "classifier_format": "TEXT",
+    "input_hash": "TEXT",
+    "config_hash": "TEXT",
+    "actor": "TEXT",
+}
+
+
+def _migrate_runs_table(conn: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
+    for col, coltype in _RUNS_AUDIT_COLUMNS.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {coltype}")
+
+
 def init_db(db_path: Path = DEFAULT_DB) -> sqlite3.Connection:
     conn = _connect(db_path)
     with _tx(conn):
@@ -79,6 +98,7 @@ def init_db(db_path: Path = DEFAULT_DB) -> sqlite3.Connection:
             CREATE INDEX IF NOT EXISTS idx_scores_run     ON scores(run_id);
             CREATE INDEX IF NOT EXISTS idx_abund_site_tax ON abundances(site, taxon);
         """)
+        _migrate_runs_table(conn)
     return conn
 
 
@@ -95,18 +115,29 @@ class TimeSeriesStore:
         input_path: str = "",
         rank: str = "G",
         notes: str = "",
+        manifest: dict | None = None,
     ) -> int:
         """
         Persist a completed pipeline run. Returns the run_id.
+
+        `manifest` is the provenance dict from provenance.build_manifest(), if
+        the caller has one — its pathogeniq_version/classifier_format/
+        input_hash/config_hash/actor fields are recorded alongside the run for
+        audit purposes. Omitting it leaves those columns NULL (backward compatible).
         """
         from datetime import timezone
         now = datetime.now(tz=timezone.utc)
         d = run_date or now.date().isoformat()
+        manifest = manifest or {}
 
         with _tx(self.conn):
             cur = self.conn.execute(
-                "INSERT INTO runs (run_date, run_ts, input_path, rank, notes) VALUES (?,?,?,?,?)",
-                (d, now.isoformat(), input_path, rank, notes),
+                """INSERT INTO runs (run_date, run_ts, input_path, rank, notes,
+                                      pathogeniq_version, classifier_format, input_hash, config_hash, actor)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (d, now.isoformat(), input_path, rank, notes,
+                 manifest.get("pathogeniq_version"), manifest.get("classifier_format"),
+                 manifest.get("input_hash"), manifest.get("config_hash"), manifest.get("actor")),
             )
             run_id = cur.lastrowid
 

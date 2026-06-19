@@ -17,9 +17,11 @@ import pandas as pd
 class Sample:
     name: str
     kraken_report: Path | None = None
+    kraken_report_2: Path | None = None  # second file of a merged paired-end pair, if any
     fastq_r1: Path | None = None
     fastq_r2: Path | None = None
     metadata: dict = field(default_factory=dict)
+    source_format: str = "kraken2"  # "kraken2" | "bracken" | "metaphlan"
 
 
 @dataclass
@@ -82,11 +84,16 @@ def _merge_paired_reports(
             base = m.group(1)
             other = base + ('_2' if m.group(2) == '1' else '_1')
             if other in name_map and other not in processed:
-                _, other_ser = name_map[other]
+                other_sample, other_ser = name_map[other]
                 merged = ser.add(other_ser, fill_value=0)
                 merged.name = base
                 out_series.append(merged)
-                out_samples.append(Sample(name=base, kraken_report=s.kraken_report))
+                out_samples.append(Sample(
+                    name=base,
+                    kraken_report=s.kraken_report,
+                    kraken_report_2=other_sample.kraken_report,
+                    source_format=s.source_format,
+                ))
                 processed.update({s.name, other})
                 continue
 
@@ -103,29 +110,50 @@ def _merge_paired_reports(
     return out_samples, out_series
 
 
+# Extra glob patterns tried, in order, only when the caller's `pattern` is
+# still the default and matches nothing — lets a directory of Bracken or
+# MetaPhlAn output "just work" with no new flags, without risking double-
+# counting files that would happen if multiple patterns were OR'd together.
+_FALLBACK_PATTERNS = ("*.bracken", "*_profile.tsv", "*.tsv", "*.txt")
+
+
 def load_sample_directory(
     directory: str | Path,
     rank: str = "G",
     pattern: str = "*.report",
+    format: str = "auto",
 ) -> SampleSet:
     """
-    Load all Kraken2 reports from a directory.
+    Load all classifier reports from a directory (Kraken2, Bracken, or
+    MetaPhlAn4 — auto-detected per file by content unless `format` is set
+    explicitly).
     Automatically merges paired-end reports (<name>_1 / <name>_2) by summing
     their raw counts — equivalent to Kraken2 --paired processing.
     Builds a taxa × samples count matrix and computes relative abundance.
     """
     directory = Path(directory)
     report_files = sorted(directory.glob(pattern))
+    if not report_files and pattern == "*.report":
+        for fallback in _FALLBACK_PATTERNS:
+            report_files = sorted(directory.glob(fallback))
+            if report_files:
+                break
     if not report_files:
-        report_files = sorted(directory.glob("*.txt"))
-    if not report_files:
-        raise FileNotFoundError(f"No Kraken2 reports found in {directory}")
+        raise FileNotFoundError(f"No classifier reports found in {directory}")
+
+    from .formats import load_report
 
     raw_samples: list[Sample] = []
     raw_series: list[pd.Series] = []
     for rp in report_files:
-        raw_samples.append(Sample(name=rp.stem, kraken_report=rp))
-        raw_series.append(load_kraken_report(rp, rank=rank))
+        series, resolved_fmt = load_report(rp, rank=rank, fmt=format)
+        raw_samples.append(Sample(name=rp.stem, kraken_report=rp, source_format=resolved_fmt))
+        raw_series.append(series)
+
+    formats_seen = {s.source_format for s in raw_samples}
+    if len(formats_seen) > 1:
+        print(f"  Warning: mixing classifier formats in one run ({sorted(formats_seen)}) — "
+              "count semantics may not be comparable across samples.")
 
     samples, series_list = _merge_paired_reports(raw_samples, raw_series)
 
@@ -158,11 +186,22 @@ def filter_taxa(
     sampleset: SampleSet,
     min_prevalence: float = 0.1,
     min_total_reads: int = 50,
+    rank_bump: bool = False,
 ) -> SampleSet:
     """
     Remove taxa that are too rare to produce reliable co-occurrence signal.
     min_prevalence: fraction of samples in which taxon must appear (reads > 0)
     min_total_reads: minimum summed reads across all samples
+
+    rank_bump: if True, species-rank (or finer) taxa that fail the
+        thresholds are not discarded — their reads are summed into a
+        synthesized genus-level row (named taxon.split()[0], the same
+        convention scoring/risk.py already uses) instead. Mirrors MARTi's
+        LCA "bump up to parent rank" behavior, scoped to species->genus
+        since PathogenIQ has no general taxonomy table. No-op for
+        already-genus-rank input (taxon.split()[0] == taxon — there is no
+        parent to bump to, so a failing genus-rank row is dropped exactly
+        as it would be with rank_bump=False).
     """
     mat = sampleset.taxa_matrix
     n_samples = mat.shape[1]
@@ -170,8 +209,21 @@ def filter_taxa(
     prevalence = (mat > 0).sum(axis=1) / n_samples
     total = mat.sum(axis=1)
 
-    keep = (prevalence >= min_prevalence) & (total >= min_total_reads)
-    filtered = mat.loc[keep]
+    keep_mask = (prevalence >= min_prevalence) & (total >= min_total_reads)
+
+    if not rank_bump:
+        filtered = mat.loc[keep_mask]
+    else:
+        kept = mat.loc[keep_mask]
+        dropped = mat.loc[~keep_mask]
+        genus_of = dropped.index.to_series().apply(lambda t: t.split()[0])
+        bumpable_mask = (genus_of != dropped.index).to_numpy()
+        if not bumpable_mask.any():
+            filtered = kept
+        else:
+            bumped = dropped.loc[bumpable_mask].groupby(genus_of[bumpable_mask]).sum()
+            filtered = kept.add(bumped, fill_value=0)  # outer-aligns on index; introduces new genus rows automatically
+
     rel = filtered.div(filtered.sum(axis=0), axis=1).fillna(0)
 
     return SampleSet(

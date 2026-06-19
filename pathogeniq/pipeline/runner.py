@@ -9,7 +9,9 @@ Flow:
   4. SBM         — fit stochastic block model, find communities
   5. Novelty     — score each sample for anomalous profiles
   6. Risk        — compute composite risk score per sample
+  6.2 Outbreak   — sample-to-sample Bray-Curtis similarity, dendrogram clustering
   6.5 Temporal   — baseline z-score, CUSUM changepoint, trend + forecast
+  6.6 External   — correlate temporal alerts against an external signal feed
   7. Report      — save JSON + HTML reports (with temporal charts)
   8. Alert       — print/return alerts for HIGH/CRITICAL/trending samples
 """
@@ -28,6 +30,7 @@ class PipelineConfig:
     fdr_alpha: float = 0.05
     min_prevalence: float = 0.1
     min_total_reads: int = 50
+    rank_bump: bool = False         # bump species below threshold up to genus instead of dropping
     # SBM
     max_k: int = 12
     sbm_n_init: int = 10
@@ -61,6 +64,7 @@ class PipelineConfig:
             fdr_alpha=cfg.get("graph", {}).get("fdr_alpha", 0.05),
             min_prevalence=cfg.get("graph", {}).get("min_prevalence", 0.1),
             min_total_reads=cfg.get("graph", {}).get("min_total_reads", 50),
+            rank_bump=cfg.get("graph", {}).get("rank_bump", False),
             max_k=cfg.get("sbm", {}).get("max_k", 12),
             sbm_n_init=cfg.get("sbm", {}).get("n_init", 10),
             alert_threshold=cfg.get("risk", {}).get("alert_threshold", 0.6),
@@ -78,16 +82,31 @@ def run(
     rank: str = "G",
     run_characterization: bool = False,
     quiet: bool = False,
+    store: object | None = None,
+    format: str = "auto",
+    actor: str | None = None,
+    external_signals: str | Path | None = None,
 ) -> dict:
     """
-    Run the full pipeline on a directory of Kraken2 reports or a count matrix TSV.
+    Run the full pipeline on a directory of classifier reports or a count matrix TSV.
 
     Args:
-        input_path: directory with *.report files OR path to a TSV/CSV count matrix
+        input_path: directory with classifier report files OR path to a TSV/CSV count matrix
         config: PipelineConfig (uses defaults if None)
         rank: taxonomic rank — 'G'=genus, 'S'=species
         run_characterization: if True, runs ESMFold on flagged novel pathogens
         quiet: suppress progress output
+        store: optional history store implementing record_run/get_site_history/
+            all_sites/run_count (e.g. saas.db.PostgresOrgStore). Defaults to the
+            SQLite-backed TimeSeriesStore at cfg.db_path/DEFAULT_DB.
+        format: classifier report format for directory input — "auto" (content-
+            sniffed per file), "kraken2", "bracken", or "metaphlan". Ignored for
+            count-matrix (file) input.
+        actor: identifier of who/what triggered this run (CLI user, dashboard
+            upload, etc.), recorded in the provenance manifest and history store.
+        external_signals: optional path to a site/date/value CSV or TSV
+            (e.g. qPCR, ddPCR, case counts) to cross-validate temporal alerts
+            against. Skipped if None.
 
     Returns:
         dict with keys: sampleset, sbm_result, risk_scores, alerts, report_paths
@@ -104,13 +123,27 @@ def run(
     from ..ingestion.reader import load_sample_directory, load_count_matrix, filter_taxa
 
     if input_path.is_dir():
-        console.print(f"Loading Kraken2 reports from [cyan]{input_path}[/cyan]")
-        sampleset = load_sample_directory(input_path, rank=rank)
+        console.print(f"Loading classifier reports from [cyan]{input_path}[/cyan]")
+        sampleset = load_sample_directory(input_path, rank=rank, format=format)
+        ingested_files: list[Path] = []
+        for s in sampleset.samples:
+            if s.kraken_report:
+                ingested_files.append(s.kraken_report)
+            if s.kraken_report_2:
+                ingested_files.append(s.kraken_report_2)
+        formats_seen = {s.source_format for s in sampleset.samples}
+        classifier_format = formats_seen.pop() if len(formats_seen) == 1 else "mixed"
     else:
         console.print(f"Loading count matrix from [cyan]{input_path}[/cyan]")
         sampleset = load_count_matrix(input_path)
+        ingested_files = [input_path]
+        classifier_format = "count_matrix"
 
     console.print(f"  {len(sampleset.samples)} samples, {sampleset.taxa_matrix.shape[0]} taxa")
+    raw_sampleset = sampleset   # snapshot before Step 2's cohort-level filtering — rarefaction needs per-sample raw counts
+
+    if external_signals:
+        ingested_files.append(Path(external_signals))
 
     # ── Step 2: Filter ────────────────────────────────────────────────────────
     console.rule("Step 2: Taxa Filtering")
@@ -118,8 +151,26 @@ def run(
         sampleset,
         min_prevalence=cfg.min_prevalence,
         min_total_reads=cfg.min_total_reads,
+        rank_bump=cfg.rank_bump,
     )
     console.print(f"  After filtering: {sampleset.taxa_matrix.shape[0]} taxa retained")
+
+    # ── Step 2.5: Rarefaction Curves ─────────────────────────────────────────
+    console.rule("Step 2.5: Rarefaction Curves")
+    rarefaction_data: dict = {}
+    try:
+        from ..planning.rarefaction import rarefaction_for_sampleset
+        curves = rarefaction_for_sampleset(raw_sampleset)
+        rarefaction_data = {
+            name: {
+                "depths": c.depths, "richness": c.richness,
+                "total_reads": c.total_reads, "observed_richness": c.observed_richness,
+            }
+            for name, c in curves.items()
+        }
+        console.print(f"  Computed rarefaction curves for {len(rarefaction_data)} samples")
+    except Exception as exc:
+        console.print(f"  [yellow]Rarefaction skipped: {exc}[/yellow]")
 
     n_taxa = sampleset.taxa_matrix.shape[0]
     sbm_result = None
@@ -304,24 +355,91 @@ def run(
         color = {"LOW": "green", "MODERATE": "yellow", "HIGH": "red", "CRITICAL": "bold red"}.get(r.level, "white")
         console.print(f"  [{color}]{r.level:8s}[/{color}]  {r.sample_name:<30s}  score={r.score:.3f}")
 
+    # ── Step 6.2: Outbreak source similarity ──────────────────────────────────
+    console.rule("Step 6.2: Outbreak Source Similarity")
+    outbreak_data: dict = {"dendrogram": None, "clusters": []}
+    try:
+        from ..outbreak.similarity import (
+            compute_sample_distances, build_dendrogram, identify_outbreak_clusters,
+        )
+        if len(sampleset.samples) >= 3:
+            condensed, sample_names = compute_sample_distances(sampleset)
+            dendro = build_dendrogram(condensed, sample_names)
+            if dendro:
+                flagged = {a.sample_name for a in alerts}
+                clusters = identify_outbreak_clusters(dendro, flagged)
+                outbreak_data = {
+                    "dendrogram": {
+                        "linkage": dendro.linkage_matrix,
+                        "sample_order": dendro.sample_order,
+                        "distance_matrix": dendro.distance_matrix,
+                    },
+                    "clusters": clusters,
+                }
+                n_flagged_clusters = sum(1 for c in clusters if c["contains_flagged"] and len(c["members"]) > 1)
+                console.print(f"  {len(clusters)} cluster(s), {n_flagged_clusters} containing a flagged sample")
+        else:
+            console.print("[yellow]Too few samples for outbreak similarity — skipping[/yellow]")
+    except Exception as exc:
+        console.print(f"  [yellow]Outbreak similarity skipped: {exc}[/yellow]")
+
     # ── Step 6.5: Temporal analysis ───────────────────────────────────────────
     console.rule("Step 6.5: Temporal Analysis")
-    from ..temporal.store import TimeSeriesStore, DEFAULT_DB
     from ..temporal.baseline import compute_baselines_all_sites
     from ..temporal.cusum import run_cusum_all_sites
     from ..temporal.trend import analyze_trends_all_sites
-    from pathlib import Path as _Path
 
-    db_path = _Path(cfg.db_path) if cfg.db_path else DEFAULT_DB
-    store = TimeSeriesStore(db_path)
-    n_runs = store.run_count()
-    console.print(f"  History DB: {db_path} ({n_runs} previous runs)")
+    if store is None:
+        from ..temporal.store import TimeSeriesStore, DEFAULT_DB
+        from pathlib import Path as _Path
+
+        db_path = _Path(cfg.db_path) if cfg.db_path else DEFAULT_DB
+        store = TimeSeriesStore(db_path)
+        console.print(f"  History DB: {db_path} ({store.run_count()} previous runs)")
+    else:
+        console.print(f"  History store: {type(store).__name__} ({store.run_count()} previous runs)")
+
+    # ── Provenance manifest ────────────────────────────────────────────────
+    # Built here (not right after Step 1) because store_backend needs `store`
+    # resolved to a concrete instance first.
+    from .. import provenance
+    from dataclasses import asdict as _asdict
+    manifest = provenance.build_manifest(
+        input_files=ingested_files,
+        classifier_format=classifier_format,
+        rank=rank,
+        config_snapshot=_asdict(cfg),
+        actor=actor,
+        store_backend=type(store).__name__,
+    )
 
     # Compute temporal signals BEFORE recording this run
     baselines = compute_baselines_all_sites(store, risk_scores, window=cfg.temporal_window)
     cusum_results = run_cusum_all_sites(store, risk_scores, window=cfg.temporal_window * 2,
                                         k=cfg.cusum_k, h=cfg.cusum_h)
     trend_results = analyze_trends_all_sites(store, risk_scores, window=cfg.temporal_window * 2)
+
+    from datetime import datetime, timezone
+    current_date = cfg.run_date or datetime.now(timezone.utc).date().isoformat()
+
+    # ── Step 6.6: External signal validation ──────────────────────────────────
+    external_validation_results: dict = {}
+    if external_signals:
+        console.rule("Step 6.6: External Signal Validation")
+        from ..external.signals import load_external_signals, validate_all_sites
+        from dataclasses import asdict as _ext_asdict
+        try:
+            ext_df = load_external_signals(external_signals)
+            external_validation_results = validate_all_sites(
+                ext_df, store, risk_scores, run_date=current_date, window=cfg.temporal_window * 2,
+            )
+            for site, result in external_validation_results.items():
+                console.print(f"  {site:<30s}  {result.summary}")
+        except ValueError as exc:
+            console.print(f"  [yellow]External signal validation skipped: {exc}[/yellow]")
+    for rs in risk_scores:
+        ext_result = external_validation_results.get(rs.sample_name)
+        rs.external_validation = _ext_asdict(ext_result) if ext_result else None
 
     # Print temporal summary
     temporal_alerts = []
@@ -346,8 +464,8 @@ def run(
             temporal_alerts.append(name)
 
     # Record this run to history
-    run_date = cfg.run_date or None
-    store.record_run(risk_scores, sampleset, run_date=run_date, input_path=str(input_path), rank=rank)
+    store.record_run(risk_scores, sampleset, run_date=current_date, input_path=str(input_path), rank=rank,
+                      manifest=manifest)
     console.print(f"  Run recorded to history (total runs: {store.run_count()})")
 
     # Add temporal alerts to main alert list
@@ -363,7 +481,7 @@ def run(
     lineage_by_sample: dict[str, list[dict]] = {}
     for sample in sampleset.samples:
         if sample.kraken_report:
-            annotations = load_species_from_report(sample.kraken_report)
+            annotations = load_species_from_report(sample.kraken_report, fmt=sample.source_format)
             lineage_by_sample[sample.name] = lineage_annotations_to_dict(annotations)
             if annotations:
                 top = annotations[0]
@@ -405,15 +523,29 @@ def run(
 
     # ── Step 8: Report ────────────────────────────────────────────────────────
     console.rule("Step 8: Reporting")
-    from ..reporting.report import save_json, save_html
+    import json
+    from ..reporting.report import to_dict, save_html
     out_dir = Path(cfg.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
     meta = {"input": str(input_path), "rank": rank, "n_samples": len(sampleset.samples)}
     json_path = out_dir / "report.json"
     html_path = out_dir / "report.html"
-    save_json(risk_scores, json_path, meta=meta,
-              baselines=baselines, cusum_results=cusum_results, trend_results=trend_results,
-              graph_data=graph_data, cluster_data=cluster_data,
-              abundance_matrix=abundance_matrix)
+    provenance_path = out_dir / "provenance.json"
+
+    report_dict = to_dict(risk_scores, meta, baselines, cusum_results, trend_results,
+                          graph_data, cluster_data, abundance_matrix, outbreak_data,
+                          rarefaction_data)
+    report_content_hash = provenance.compute_report_content_hash(report_dict["samples"])
+    manifest["report_content_hash"] = report_content_hash
+    report_dict["metadata"]["provenance"] = manifest
+
+    with open(json_path, "w") as f:
+        json.dump(report_dict, f, indent=2)
+    console.print(f"  JSON report → {json_path}")
+    with open(provenance_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+    console.print(f"  Provenance manifest → {provenance_path}")
+
     save_html(risk_scores, html_path, meta=meta,
               baselines=baselines, cusum_results=cusum_results, trend_results=trend_results)
 
@@ -457,7 +589,8 @@ def run(
             "trends": trend_results,
             "store": store,
         },
-        "report_paths": {"json": str(json_path), "html": str(html_path)},
+        "report_paths": {"json": str(json_path), "html": str(html_path), "provenance": str(provenance_path)},
+        "manifest": manifest,
         "vqvae": vqvae_results,
         "dispatch": dispatch_results,
     }

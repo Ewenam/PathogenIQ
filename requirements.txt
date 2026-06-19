@@ -18,3 +18,8 @@ tqdm>=4.66
 fastapi>=0.110
 uvicorn>=0.29
 python-multipart>=0.0.9
+
+# ── SaaS mode (PATHOGENIQ_MODE=saas): org-scoped Postgres + JWT auth ──────────
+sqlalchemy>=2.0
+psycopg[binary]>=3.1
+pyjwt>=2.8
