@@ -389,27 +389,38 @@ def run(
                             f"{sample.name} → {seq_novelty:.3f}"
                         )
 
+    # Resolve the history store early — the rolling-baseline tier needs it
+    # before scoring (Step 6.5 reuses the same resolved store).
+    if store is None:
+        from ..temporal.store import TimeSeriesStore, DEFAULT_DB
+        from pathlib import Path as _Path
+        store = TimeSeriesStore(_Path(cfg.db_path) if cfg.db_path else DEFAULT_DB)
+
     # ── Step 6: Risk scoring ──────────────────────────────────────────────────
     console.rule("Step 6: Risk Scoring")
     if cfg.scoring_mode == "baseline_relative":
         # Trustworthy default: score each sample's pathogen elevation relative
-        # to a per-site baseline (cohort self-baseline when no history is
-        # supplied), so endemic flora (e.g. Pseudomonas ~39%) does not saturate
-        # every sample to HIGH. SBM community context is intentionally excluded
-        # (non-discriminative on real data).
+        # to a per-site baseline, resolved in tiers (customer controls > rolling
+        # site history > shipped global prior > cohort self-baseline) so endemic
+        # flora (e.g. Pseudomonas ~39%) does not saturate every sample to HIGH.
+        # SBM community context is intentionally excluded (non-discriminative).
         from ..scoring.baseline_risk import score_all_relative, AbundanceBaseline
-        frozen = None
+        from ..scoring.baseline_resolver import resolve_baseline, history_matrix_from_store
         if cfg.baseline_path and Path(cfg.baseline_path).exists():
-            frozen = AbundanceBaseline.load(cfg.baseline_path)
-            console.print(f"  mode: baseline-relative (frozen baseline {cfg.baseline_path})")
-        elif cfg.baseline_control_samples:
-            console.print(f"  mode: baseline-relative ({len(cfg.baseline_control_samples)} control samples)")
+            baseline, tier = AbundanceBaseline.load(cfg.baseline_path), "frozen"
         else:
-            console.print("  mode: baseline-relative (cohort self-baseline)")
+            hist = history_matrix_from_store(
+                store, sites=sampleset.sample_names, window=cfg.temporal_window * 2)
+            baseline, tier = resolve_baseline(
+                sampleset.relative_abundance,
+                control_names=cfg.baseline_control_samples,
+                history_matrix=hist,
+            )
+        console.print(f"  mode: baseline-relative (baseline tier: {tier})")
+        # baseline is the resolved AbundanceBaseline, or None → cohort self-baseline
         risk_scores = score_all_relative(
             sampleset,
-            baseline=frozen,
-            control_names=cfg.baseline_control_samples,
+            baseline=baseline,
             novelty_scores=novelty_scores,
         )
     else:

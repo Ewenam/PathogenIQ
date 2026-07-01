@@ -165,6 +165,28 @@ class AbundanceBaseline:
             raise ValueError("none of the control_names are in the abundance matrix")
         return cls.fit(rel_abundance[cols], scale_floor=scale_floor, space=space)
 
+    @classmethod
+    def fit_rolling(cls, history: pd.DataFrame, scale_floor: float = 1e-3,
+                    space: str = "relative", exclude_outlier_frac: float = 0.1) -> "AbundanceBaseline":
+        """Fit a rolling baseline from a trailing window of historical samples,
+        FIRST excluding the most pathogen-loaded samples so a past outbreak in
+        the window doesn't inflate the reference (Farrington-style: don't let
+        events contaminate the baseline). Falls back to the full window if it is
+        too small to drop anything."""
+        n = history.shape[1]
+        if n >= 5 and 0 < exclude_outlier_frac < 0.5:
+            load = {}
+            for col in history.columns:
+                s = history[col]
+                load[col] = float(sum(v for t, v in s.items()
+                                      if v > 0 and t.split()[0] in PATHOGEN_DB))
+            n_drop = max(1, int(round(n * exclude_outlier_frac)))
+            drop = sorted(load, key=load.get, reverse=True)[:n_drop]
+            kept = [c for c in history.columns if c not in drop]
+            if len(kept) >= 3:
+                history = history[kept]
+        return cls.fit(history, scale_floor=scale_floor, space=space)
+
 
 # Per-space squash constant: CLR z-scores are naturally tighter than raw
 # relative z-scores (which explode for rare genera with ~0 MAD), so CLR needs a

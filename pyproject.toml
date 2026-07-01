@@ -38,3 +38,7 @@ include = ["pathogeniq*"]
 
 [tool.setuptools]
 py-modules = ["cli"]
+
+[tool.setuptools.package-data]
+# ship the global-prior baseline (day-one "typical wastewater flora" reference)
+"pathogeniq.scoring" = ["data/*.json"]

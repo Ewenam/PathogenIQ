@@ -213,5 +213,33 @@ class TimeSeriesStore:
         ).fetchall()
         return [r["site"] for r in rows]
 
+    def get_abundance_matrix(self, last_n: int = 26, sites: list[str] | None = None):
+        """Return a taxa × (run,site) relative-abundance matrix from the most
+        recent `last_n` runs (optionally restricted to `sites`), for fitting a
+        rolling baseline. Returns an empty DataFrame if there is no history."""
+        import pandas as pd
+        params: list = []
+        site_clause = ""
+        if sites:
+            site_clause = f" AND a.site IN ({','.join('?' * len(sites))})"
+            params.extend(sites)
+        rows = self.conn.execute(
+            f"""SELECT a.run_id, a.site, a.taxon, a.rel_abund
+                FROM abundances a
+                JOIN runs r ON r.run_id = a.run_id
+                WHERE a.run_id IN (
+                    SELECT run_id FROM runs ORDER BY run_ts DESC LIMIT ?
+                ){site_clause}""",
+            [last_n, *params],
+        ).fetchall()
+        if not rows:
+            return pd.DataFrame()
+        recs = [dict(r) for r in rows]
+        for rec in recs:
+            rec["col"] = f"{rec['run_id']}::{rec['site']}"
+        df = pd.DataFrame(recs)
+        return df.pivot_table(index="taxon", columns="col", values="rel_abund",
+                              fill_value=0.0)
+
     def run_count(self) -> int:
         return self.conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
