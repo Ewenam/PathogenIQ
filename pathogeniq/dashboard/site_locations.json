@@ -321,5 +321,40 @@
     "lat": 43.073,
     "lon": -89.401,
     "label": "Synthetic control"
+  },
+  "wwtp_clean_creek": {
+    "lat": 33.748,
+    "lon": -84.387,
+    "label": "Clean Creek WWTP"
+  },
+  "wwtp_eastside": {
+    "lat": 33.755,
+    "lon": -84.29,
+    "label": "Eastside WWTP"
+  },
+  "wwtp_riverside": {
+    "lat": 33.72,
+    "lon": -84.41,
+    "label": "Riverside WWTP"
+  },
+  "wwtp_downtown": {
+    "lat": 33.749,
+    "lon": -84.388,
+    "label": "Downtown WWTP"
+  },
+  "wwtp_northside": {
+    "lat": 33.82,
+    "lon": -84.37,
+    "label": "Northside WWTP"
+  },
+  "wwtp_westside": {
+    "lat": 33.76,
+    "lon": -84.47,
+    "label": "Westside WWTP"
+  },
+  "wwtp_mockcommunity": {
+    "lat": 33.7,
+    "lon": -84.35,
+    "label": "QC Reference Standard"
   }
 }
