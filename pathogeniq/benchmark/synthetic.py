@@ -91,6 +91,54 @@ SCENARIOS: list[Scenario] = [
 ]
 
 
+# ── Hard scenarios near the decision boundary ─────────────────────────────────
+# The scenarios above are near-trivially separable (clear outbreak vs clean),
+# which is why calibration on them yields AUROC≈1.0. These deliberately sit on
+# the boundary so the validation harness produces meaningful ROC/PR and a
+# non-degenerate operating point. Kept SEPARATE from SCENARIOS so the canonical
+# benchmark / paper figures are unchanged.
+HARD_SCENARIOS: list[Scenario] = [
+    Scenario(
+        name="borderline_outbreak",
+        description="Genuine but modest signal — high-risk pathogen just around "
+                    "the alert boundary (8–16%). A true positive that is hard to catch.",
+        n_samples=12,
+        contamination={"Salmonella": (0.08, 0.16)},
+        expected_alert=True,
+    ),
+    Scenario(
+        name="cryptic_low_shed",
+        description="Real waterborne pathogen at very low shedding (2–5%) — the "
+                    "emerging-event case that abundance alone misses.",
+        n_samples=10,
+        contamination={"Vibrio": (0.02, 0.05)},
+        expected_alert=True,
+    ),
+    Scenario(
+        name="endemic_flora_confounder",
+        description="High load of endemic opportunists that happen to be in the "
+                    "risk DB (Pseudomonas/Streptococcus/Acinetobacter, 8–20% total) — "
+                    "routine background that should NOT alert but trips naive "
+                    "multi-pathogen load rules.",
+        n_samples=12,
+        contamination={
+            "Pseudomonas": (0.05, 0.10),
+            "Streptococcus": (0.03, 0.07),
+            "Acinetobacter": (0.02, 0.05),
+        },
+        expected_alert=False,
+    ),
+    Scenario(
+        name="near_threshold_negative",
+        description="A single moderate-risk genus at 4–9% — elevated but below a "
+                    "credible outbreak level; should stay under the alert threshold.",
+        n_samples=10,
+        contamination={"Klebsiella": (0.04, 0.09)},
+        expected_alert=False,
+    ),
+]
+
+
 @dataclass
 class SyntheticDataset:
     scenario: Scenario

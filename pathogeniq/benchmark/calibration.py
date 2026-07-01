@@ -32,14 +32,21 @@ class LabeledScores:
     scenario: list[str]           # scenario name per sample (for stratified metrics)
 
 
-def collect_labeled_scores(seed: int = 42, quick: bool = False) -> LabeledScores:
+def collect_labeled_scores(seed: int = 42, quick: bool = False,
+                           include_hard: bool = True) -> LabeledScores:
     """Run every benchmark scenario once and pool (score, label) for samples
-    whose ground-truth alert status is known (expected_alert is not None)."""
-    from .synthetic import SCENARIOS, generate_scenario
+    whose ground-truth alert status is known (expected_alert is not None).
+
+    include_hard: also include the boundary-case HARD_SCENARIOS (default), which
+    is what makes the pooled ROC/PR non-degenerate. Set False to calibrate only
+    on the canonical (easy) SCENARIOS.
+    """
+    from .synthetic import SCENARIOS, HARD_SCENARIOS, generate_scenario
     from .runner import _run_scenario_pipeline
 
+    scenarios = list(SCENARIOS) + (list(HARD_SCENARIOS) if include_hard else [])
     scores, labels, scen = [], [], []
-    for i, scenario in enumerate(SCENARIOS):
+    for i, scenario in enumerate(scenarios):
         dataset = generate_scenario(scenario, seed=seed + i)
         risk = {r.sample_name: r.score for r in _run_scenario_pipeline(dataset, 0.6, quick)}
         for name, row in dataset.ground_truth.iterrows():
@@ -132,10 +139,11 @@ def calibrate(scores: np.ndarray, labels: np.ndarray,
 
 def validate(seed: int = 42, quick: bool = False,
              target_sensitivity: float = 0.95,
-             target_specificity: float = 0.95) -> dict:
+             target_specificity: float = 0.95,
+             include_hard: bool = True) -> dict:
     """End-to-end: run scenarios, pool labeled scores, calibrate. Returns a
     JSON-serializable validation report."""
-    ls = collect_labeled_scores(seed=seed, quick=quick)
+    ls = collect_labeled_scores(seed=seed, quick=quick, include_hard=include_hard)
     report = calibrate(ls.scores, ls.labels,
                        target_sensitivity=target_sensitivity,
                        target_specificity=target_specificity)

@@ -53,3 +53,13 @@ def test_confusion_at_counts():
     c = _confusion_at(scores, labels, 0.5)
     assert (c["tp"], c["fp"], c["tn"], c["fn"]) == (1, 1, 1, 1)
     assert c["sensitivity"] == 0.5 and c["specificity"] == 0.5
+
+
+def test_hard_scenarios_generate_with_expected_labels():
+    from pathogeniq.benchmark.synthetic import HARD_SCENARIOS, generate_scenario
+    assert len(HARD_SCENARIOS) >= 3
+    for i, sc in enumerate(HARD_SCENARIOS):
+        ds = generate_scenario(sc, seed=1 + i)
+        assert ds.count_matrix.shape[1] == sc.n_samples
+        # ground-truth alert label matches the scenario's expected_alert
+        assert (ds.ground_truth["expected_alert"] == sc.expected_alert).all()
