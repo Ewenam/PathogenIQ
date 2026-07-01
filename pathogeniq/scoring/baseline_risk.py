@@ -92,6 +92,39 @@ class AbundanceBaseline:
             m, s = 0.0, self.novel_scale
         return max(0.0, (float(abundance) - m) / s)
 
+    # ── persistence (freeze a clean-window baseline, reuse across runs) ──────
+    def to_dict(self) -> dict:
+        return {"version": 1, "median": self.median, "scale": self.scale,
+                "scale_floor": self.scale_floor, "novel_scale": self.novel_scale}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "AbundanceBaseline":
+        return cls(median=dict(d["median"]), scale=dict(d["scale"]),
+                   scale_floor=d.get("scale_floor", 1e-3),
+                   novel_scale=d.get("novel_scale", 5e-3))
+
+    def save(self, path) -> None:
+        import json
+        from pathlib import Path
+        p = Path(path); p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(self.to_dict()))
+
+    @classmethod
+    def load(cls, path) -> "AbundanceBaseline":
+        import json
+        from pathlib import Path
+        return cls.from_dict(json.loads(Path(path).read_text()))
+
+    @classmethod
+    def from_controls(cls, rel_abundance: pd.DataFrame, control_names: list[str],
+                      scale_floor: float = 1e-3) -> "AbundanceBaseline":
+        """Fit from a designated set of clean/negative-control sample columns
+        (CZ ID-style background model) rather than the whole cohort."""
+        cols = [c for c in control_names if c in rel_abundance.columns]
+        if not cols:
+            raise ValueError("none of the control_names are in the abundance matrix")
+        return cls.fit(rel_abundance[cols], scale_floor=scale_floor)
+
 
 def _elevation(rel_abund: pd.Series, baseline: AbundanceBaseline) -> tuple[float, list[dict]]:
     """Max danger-weighted exceedance over present pathogen genera."""
@@ -171,17 +204,21 @@ def score_sample_relative(
 def score_all_relative(
     sampleset,
     baseline: AbundanceBaseline | None = None,
+    control_names: list[str] | None = None,
     novelty_scores: dict[str, float] | None = None,
     temporal_z: dict[str, float] | None = None,
     weights: dict | None = None,
 ) -> list[RiskScore]:
-    """Score all samples against a baseline. If `baseline` is None, fit a robust
-    self-referential baseline from the cohort (cold-start): flags samples whose
-    pathogen composition departs from the site's typical profile. Supply an
-    explicit baseline (a clean historical window) for the reliable regime."""
+    """Score all samples against a baseline. Baseline resolution order:
+      1. an explicit `baseline` (a frozen clean historical window), else
+      2. fit from `control_names` (CZ ID-style negative/clean controls), else
+      3. a robust cohort self-baseline (cold start) — flags samples whose
+         pathogen composition departs from the site's typical profile.
+    """
     rel = sampleset.relative_abundance
     if baseline is None:
-        baseline = AbundanceBaseline.fit(rel)
+        baseline = (AbundanceBaseline.from_controls(rel, control_names)
+                    if control_names else AbundanceBaseline.fit(rel))
     novelty_scores = novelty_scores or {}
     temporal_z = temporal_z or {}
 

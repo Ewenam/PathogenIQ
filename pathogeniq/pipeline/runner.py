@@ -48,6 +48,11 @@ class PipelineConfig:
     # baseline; endemic flora does not saturate the score) or "absolute" (the
     # legacy risk_weight×abundance scorer, kept for the synthetic benchmark/paper).
     scoring_mode: str = "baseline_relative"
+    # Baseline for baseline_relative scoring. Resolution order: a frozen
+    # baseline JSON (baseline_path) > designated clean/negative-control sample
+    # names (baseline_control_samples) > robust cohort self-baseline (cold start).
+    baseline_path: str = ""
+    baseline_control_samples: list = None
     # Reporting
     output_dir: str = "./reports"
     # Alerting
@@ -392,11 +397,19 @@ def run(
         # supplied), so endemic flora (e.g. Pseudomonas ~39%) does not saturate
         # every sample to HIGH. SBM community context is intentionally excluded
         # (non-discriminative on real data).
-        from ..scoring.baseline_risk import score_all_relative
-        console.print("  mode: baseline-relative (anomaly vs site baseline)")
+        from ..scoring.baseline_risk import score_all_relative, AbundanceBaseline
+        frozen = None
+        if cfg.baseline_path and Path(cfg.baseline_path).exists():
+            frozen = AbundanceBaseline.load(cfg.baseline_path)
+            console.print(f"  mode: baseline-relative (frozen baseline {cfg.baseline_path})")
+        elif cfg.baseline_control_samples:
+            console.print(f"  mode: baseline-relative ({len(cfg.baseline_control_samples)} control samples)")
+        else:
+            console.print("  mode: baseline-relative (cohort self-baseline)")
         risk_scores = score_all_relative(
             sampleset,
-            baseline=None,                # cohort self-baseline (cold start)
+            baseline=frozen,
+            control_names=cfg.baseline_control_samples,
             novelty_scores=novelty_scores,
         )
     else:
@@ -447,6 +460,7 @@ def run(
     from ..temporal.baseline import compute_baselines_all_sites
     from ..temporal.cusum import run_cusum_all_sites
     from ..temporal.trend import analyze_trends_all_sites
+    from ..temporal.farrington import run_farrington_all_sites
 
     if store is None:
         from ..temporal.store import TimeSeriesStore, DEFAULT_DB
@@ -477,6 +491,10 @@ def run(
     cusum_results = run_cusum_all_sites(store, risk_scores, window=cfg.temporal_window * 2,
                                         k=cfg.cusum_k, h=cfg.cusum_h)
     trend_results = analyze_trends_all_sites(store, risk_scores, window=cfg.temporal_window * 2)
+    # Farrington aberration on the per-site score series (public-health standard;
+    # trend + overdispersion aware). Complements CUSUM.
+    farrington_results = run_farrington_all_sites(store, risk_scores,
+                                                  window=cfg.temporal_window * 2)
 
     from datetime import datetime, timezone
     current_date = cfg.run_date or datetime.now(timezone.utc).date().isoformat()
@@ -508,11 +526,15 @@ def run(
         cu = cusum_results.get(name)
         tr = trend_results.get(name)
 
+        fr = farrington_results.get(name)
+
         flags = []
         if bl and bl.is_anomaly:
             flags.append(f"[yellow]BASELINE+{bl.pct_above_baseline:.0f}%[/yellow]")
         if cu and cu.alert:
             flags.append(f"[red]CUSUM({cu.signal_strength})[/red]")
+        if fr and fr.get("alarm"):
+            flags.append(f"[red]FARRINGTON(z={fr.get('z', 0):.1f})[/red]")
         if tr and tr.trend == "increasing" and tr.is_significant:
             flags.append(f"[orange1]TREND↑(τ={tr.tau:.2f})[/orange1]")
 
