@@ -166,7 +166,24 @@ class AbundanceBaseline:
         return cls.fit(rel_abundance[cols], scale_floor=scale_floor, space=space)
 
 
-def _elevation(rel_abund: pd.Series, baseline: AbundanceBaseline) -> tuple[float, list[dict]]:
+# Per-space squash constant: CLR z-scores are naturally tighter than raw
+# relative z-scores (which explode for rare genera with ~0 MAD), so CLR needs a
+# smaller k to reach the alert band. `clr` value calibrated in
+# scripts (see calibrate_clr) against a realistic endemic baseline.
+SQUASH_K = {"relative": 3.0, "clr": 2.0}
+# Cap the exceedance z. Under a cohort self-baseline a genus present in only a
+# few samples has ~0 MAD, so any appearance yields an absurd z (e.g. 100+); the
+# cap keeps such artifacts from dominating while leaving genuine strong spikes
+# (z well past the alert band) unaffected.
+Z_CAP = 12.0
+# Corroboration (temporal + novelty) is a bounded BONUS on top of the pathogen
+# elevation floor — it can lift a borderline elevation but never manufacture an
+# alert on its own (endemic samples with incidental novelty stay LOW).
+CORROB_WEIGHT = 0.4
+
+
+def _elevation(rel_abund: pd.Series, baseline: AbundanceBaseline,
+               squash_k: float = 3.0) -> tuple[float, list[dict]]:
     """Max danger-weighted exceedance over present pathogen genera."""
     best = 0.0
     detected: list[dict] = []
@@ -178,9 +195,9 @@ def _elevation(rel_abund: pd.Series, baseline: AbundanceBaseline) -> tuple[float
         info = PATHOGEN_DB.get(genus)
         if info is None:
             continue
-        z = baseline.exceedance(taxon, values.get(taxon, ab))
+        z = min(baseline.exceedance(taxon, values.get(taxon, ab)), Z_CAP)
         rw = info["risk_weight"]
-        contribution = _squash(z) * (0.5 + 0.5 * rw)   # danger-scaled anomaly
+        contribution = _squash(z, k=squash_k) * (0.5 + 0.5 * rw)   # danger-scaled anomaly
         detected.append({
             "taxon": taxon, "genus": genus, "risk_weight": rw,
             "abundance": round(float(ab), 5), "exceedance_z": round(z, 2),
@@ -207,19 +224,28 @@ def score_sample_relative(
     baseline: AbundanceBaseline,
     novelty_score: float = 0.0,
     temporal_z: float = 0.0,
-    weights: dict | None = None,
+    squash_k: float | None = None,
+    corrob_weight: float = CORROB_WEIGHT,
 ) -> RiskScore:
-    """Baseline-relative composite risk score for one sample."""
-    w = weights or {"elevation": 0.7, "temporal": 0.15, "novelty": 0.15}
-    elevation, detected = _elevation(rel_abund, baseline)
+    """Baseline-relative composite risk score for one sample.
+
+    Composite design: the danger-weighted pathogen ELEVATION sets a floor in
+    [0,1]; corroborating temporal (CUSUM/Farrington) + novelty signals add a
+    bounded bonus on top of that floor but cannot fire an alert alone. So a
+    strongly-elevated dangerous genus can reach HIGH/CRITICAL by itself, while
+    an endemic sample with incidental novelty stays LOW.
+        base = elevation + (1 - elevation) * corrob_weight * corroboration
+        score = max(tripwire, base)
+    """
+    k = squash_k if squash_k is not None else SQUASH_K.get(baseline.space, 3.0)
+    elevation, detected = _elevation(rel_abund, baseline, squash_k=k)
     tripwire, fired = _tripwire(rel_abund)
     temporal = _squash(max(0.0, float(temporal_z)), k=2.0)
     novelty = float(np.clip(novelty_score, 0.0, 1.0))
 
-    composite = (w["elevation"] * elevation
-                 + w["temporal"] * temporal
-                 + w["novelty"] * novelty)
-    score = float(np.clip(max(composite, tripwire), 0.0, 1.0))
+    corroboration = 0.5 * temporal + 0.5 * novelty
+    base = elevation + (1.0 - elevation) * corrob_weight * corroboration
+    score = float(np.clip(max(base, tripwire), 0.0, 1.0))
 
     return RiskScore(
         sample_name=sample_name,
@@ -233,11 +259,12 @@ def score_sample_relative(
             "abundance_score": round(elevation, 4),  # alias for store/report compat
             "temporal_score": round(temporal, 4),
             "novelty_signal": round(novelty, 4),
-            "composite_score": round(composite, 4),
+            "corroboration": round(corroboration, 4),
+            "composite_score": round(base, 4),
             "tripwire_score": round(tripwire, 4),
             "tripwire_hits": fired,
             "top_driver": detected[0] if detected else None,
-            "weights": w,
+            "squash_k": k,
         },
     )
 
@@ -248,7 +275,7 @@ def score_all_relative(
     control_names: list[str] | None = None,
     novelty_scores: dict[str, float] | None = None,
     temporal_z: dict[str, float] | None = None,
-    weights: dict | None = None,
+    squash_k: float | None = None,
     space: str = "relative",
 ) -> list[RiskScore]:
     """Score all samples against a baseline. Baseline resolution order:
@@ -273,7 +300,7 @@ def score_all_relative(
             name, rel.get(name, pd.Series(dtype=float)), baseline,
             novelty_score=novelty_scores.get(name, 0.0),
             temporal_z=temporal_z.get(name, 0.0),
-            weights=weights,
+            squash_k=squash_k,
         )
         scores.append(s)
     scores.sort(key=lambda x: x.score, reverse=True)

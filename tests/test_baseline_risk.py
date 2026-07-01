@@ -130,3 +130,36 @@ def test_clr_baseline_save_load_roundtrip(tmp_path):
     s = pd.Series({"Vibrio": 0.3, "Pseudomonas": 0.3, "Bg1": 0.4})
     assert abs(score_sample_relative("x", s, bl).score
                - score_sample_relative("x", s, bl2).score) < 1e-9
+
+
+def test_corroboration_cannot_alert_alone():
+    # endemic sample (no elevation) with maxed novelty must NOT reach the alert
+    # band — corroboration is a bounded bonus, not an independent trigger.
+    bl = _baseline_with_endemic_flora()
+    s = pd.Series({"Pseudomonas": 0.40, "Bg1": 0.60})
+    r = score_sample_relative("x", s / s.sum(), bl, novelty_score=1.0)
+    assert r.score < 0.6 and r.level in ("LOW", "MODERATE")
+
+
+def test_strong_outbreak_reaches_high_band():
+    # the composite must let a strongly-elevated dangerous genus reach HIGH/CRITICAL
+    bl = _baseline_with_endemic_flora()
+    s = pd.Series({"Vibrio": 0.45, "Pseudomonas": 0.30, "Bg1": 0.25})
+    r = score_sample_relative("x", s / s.sum(), bl)
+    assert r.score >= 0.6
+
+def test_zcap_limits_rare_genus_artifact():
+    # a genus at ~0 in the baseline (tiny MAD) must not produce an unbounded z
+    from pathogeniq.scoring.baseline_risk import Z_CAP, SQUASH_K
+    assert SQUASH_K["clr"] == 2.0
+    rng = np.random.default_rng(9)
+    cols = {}
+    for i in range(20):
+        # Clostridium present in only 2 samples -> near-zero MAD
+        cl = 0.05 if i < 2 else 0.0
+        ps = max(0.01, rng.normal(0.4, 0.03)); rest = max(0.01, 1 - ps - cl)
+        cols[f"c{i}"] = pd.Series({"Pseudomonas": ps, "Clostridium": cl, "Bg1": rest})
+    rel = pd.concat(cols, axis=1); rel = rel.div(rel.sum(axis=0), axis=1)
+    bl = AbundanceBaseline.fit(rel)
+    r = score_sample_relative("spike", pd.Series({"Clostridium": 0.10, "Pseudomonas": 0.4, "Bg1": 0.5}), bl)
+    assert r.detected_pathogens[0]["exceedance_z"] <= Z_CAP
