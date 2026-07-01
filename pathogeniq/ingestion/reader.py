@@ -21,7 +21,17 @@ class Sample:
     fastq_r1: Path | None = None
     fastq_r2: Path | None = None
     metadata: dict = field(default_factory=dict)
-    source_format: str = "kraken2"  # "kraken2" | "bracken" | "metaphlan"
+    source_format: str = "kraken2"  # "kraken2" | "bracken" | "metaphlan" | "fastq" | "fasta" | "matrix"
+    # Provenance of the abundance for this sample: "uploaded" (user-supplied
+    # classifier report) vs "classified" (we ran the classifier on uploaded
+    # reads with our pinned DB). Cross-provenance comparisons carry batch-effect
+    # risk, so the pipeline/report can surface this.
+    abundance_provenance: str = "uploaded"
+
+
+# Capability tokens a sample can carry. Downstream stages are gated on these.
+CAP_ABUNDANCE = "abundance"   # has a taxa-abundance profile (always required)
+CAP_READS = "reads"           # has retained sequence reads → read-level novelty
 
 
 @dataclass
@@ -29,10 +39,29 @@ class SampleSet:
     samples: list[Sample]
     taxa_matrix: pd.DataFrame | None = None   # taxa × samples count matrix
     relative_abundance: pd.DataFrame | None = None
+    # Optional per-sample retained read subsample (sample_name -> list of read
+    # strings). Present only for FASTQ/FASTA uploads; enables read-level novelty.
+    reads_by_sample: dict[str, list[str]] | None = None
 
     @property
     def sample_names(self) -> list[str]:
         return [s.name for s in self.samples]
+
+    def has_reads(self, name: str) -> bool:
+        return bool(self.reads_by_sample and self.reads_by_sample.get(name))
+
+    def capabilities(self, name: str) -> set[str]:
+        """Per-sample capability set that gates downstream stages."""
+        caps = set()
+        if (self.taxa_matrix is not None and name in self.taxa_matrix.columns
+                and float(self.taxa_matrix[name].sum()) > 0):
+            caps.add(CAP_ABUNDANCE)
+        if self.has_reads(name):
+            caps.add(CAP_READS)
+        return caps
+
+    def samples_with_reads(self) -> list[str]:
+        return [s.name for s in self.samples if self.has_reads(s.name)]
 
 
 def load_kraken_report(path: Path, rank: str = "G") -> pd.Series:
@@ -230,4 +259,5 @@ def filter_taxa(
         samples=sampleset.samples,
         taxa_matrix=filtered,
         relative_abundance=rel,
+        reads_by_sample=sampleset.reads_by_sample,  # taxa filtering doesn't touch reads
     )

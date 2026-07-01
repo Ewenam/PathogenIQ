@@ -121,8 +121,22 @@ def run(
     # ── Step 1: Ingest ────────────────────────────────────────────────────────
     console.rule("[bold]PathogenIQ[/bold] — Step 1: Ingestion")
     from ..ingestion.reader import load_sample_directory, load_count_matrix, filter_taxa
+    from ..ingestion.router import ingest as _ingest, _is_reads
 
-    if input_path.is_dir():
+    # Route raw-read uploads (FASTQ/FASTA, or a directory containing them)
+    # through the classification router; keep the report/matrix fast-paths as-is.
+    _has_reads = (
+        (input_path.is_file() and _is_reads(input_path)) or
+        (input_path.is_dir() and any(_is_reads(p) for p in input_path.iterdir() if p.is_file()))
+    )
+    if _has_reads:
+        console.print(f"Ingesting raw reads (classify + retain) from [cyan]{input_path}[/cyan]")
+        sampleset = _ingest(input_path, rank=rank)
+        ingested_files = [input_path]
+        classifier_format = "reads"
+        n_reads = len(sampleset.samples_with_reads())
+        console.print(f"  {n_reads}/{len(sampleset.samples)} samples carry retained reads")
+    elif input_path.is_dir():
         console.print(f"Loading classifier reports from [cyan]{input_path}[/cyan]")
         sampleset = load_sample_directory(input_path, rank=rank, format=format)
         ingested_files: list[Path] = []
@@ -236,6 +250,32 @@ def run(
     for name, score in sorted(novelty_scores.items(), key=lambda x: -x[1]):
         if score > 0.5:
             console.print(f"  [yellow]Novelty flag:[/yellow] {name} (score={score:.3f})")
+
+    # ── Step 5b: Read-level k-mer novelty (capability-gated) ──────────────────
+    # Only fires for samples that carry retained reads (FASTQ/FASTA uploads).
+    # Report-only samples keep the abundance-based novelty above. When reads are
+    # present, the read-level signal is max-fused in — it detects composition
+    # shifts (e.g. an emerging variant) that genus abundance alone can miss.
+    read_samples = sampleset.samples_with_reads() if hasattr(sampleset, "samples_with_reads") else []
+    if read_samples:
+        console.rule("Step 5b: Read-level k-mer Novelty")
+        console.print(f"  {len(read_samples)}/{len(sampleset.samples)} samples carry reads")
+        try:
+            from ..novelty.kmer_novelty import sample_novelty_scores
+            kmer_scores = sample_novelty_scores(
+                {n: sampleset.reads_by_sample[n] for n in read_samples}
+            )
+            for name, ks in kmer_scores.items():
+                prev = novelty_scores.get(name, 0.0)
+                if ks > prev:
+                    novelty_scores[name] = ks
+                    if ks > 0.5:
+                        console.print(
+                            f"  [yellow]k-mer novelty elevated:[/yellow] {name} "
+                            f"→ {ks:.3f} (was {prev:.3f})"
+                        )
+        except Exception as exc:
+            console.print(f"  [dim]k-mer novelty skipped: {exc}[/dim]")
 
     # ── Step 5.5: Unsupervised clustering + differential abundance ────────────
     console.rule("Step 5.5: Sample Clustering & Differential Abundance")
