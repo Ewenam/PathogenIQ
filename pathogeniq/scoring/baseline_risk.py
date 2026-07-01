@@ -59,6 +59,17 @@ def _squash(z: float, k: float = 3.0) -> float:
     return z / (z + k)
 
 
+def _clr_transform(rel: pd.DataFrame, pseudocount: float = 1e-6) -> pd.DataFrame:
+    """Centered-log-ratio transform of a taxa×samples relative-abundance matrix.
+    CLR removes the compositional constant-sum constraint, so a taxon's value is
+    interpreted relative to the sample's geometric mean rather than in isolation
+    (Aitchison; as in ANCOM-BC/ALDEx2). Zeros handled by a small pseudocount."""
+    X = rel.to_numpy(dtype=float) + pseudocount
+    logX = np.log(X)
+    gm = logX.mean(axis=0, keepdims=True)      # per-sample geometric mean (in log)
+    return pd.DataFrame(logX - gm, index=rel.index, columns=rel.columns)
+
+
 @dataclass
 class AbundanceBaseline:
     """Per-taxon robust location/scale from a set of baseline samples.
@@ -71,37 +82,66 @@ class AbundanceBaseline:
     scale: dict[str, float]
     scale_floor: float = 1e-3
     novel_scale: float = 5e-3   # scale used for taxa unseen in the baseline
+    space: str = "relative"     # "relative" | "clr" (compositional)
+    taxa: list = None           # baseline taxa (needed to CLR-transform samples)
+    pseudocount: float = 1e-6
 
     @classmethod
-    def fit(cls, rel_abundance: pd.DataFrame, scale_floor: float = 1e-3) -> "AbundanceBaseline":
+    def fit(cls, rel_abundance: pd.DataFrame, scale_floor: float = 1e-3,
+            space: str = "relative", pseudocount: float = 1e-6) -> "AbundanceBaseline":
         """rel_abundance: taxa × samples relative-abundance matrix (the baseline
-        window, or the cohort itself for a self-referential cold start)."""
+        window, or the cohort itself for a self-referential cold start).
+        space="clr" fits per-taxon location/scale in centered-log-ratio space
+        (compositionally sound); "relative" uses raw relative abundance."""
+        mat = _clr_transform(rel_abundance, pseudocount) if space == "clr" else rel_abundance
         med, scl = {}, {}
-        for taxon, row in rel_abundance.iterrows():
+        for taxon, row in mat.iterrows():
             v = row.to_numpy(dtype=float)
             m = float(np.median(v))
             mad = float(np.median(np.abs(v - m)))
             med[taxon] = m
             scl[taxon] = max(1.4826 * mad, scale_floor)
-        return cls(median=med, scale=scl, scale_floor=scale_floor)
+        return cls(median=med, scale=scl, scale_floor=scale_floor, space=space,
+                   taxa=list(rel_abundance.index), pseudocount=pseudocount)
 
-    def exceedance(self, taxon: str, abundance: float) -> float:
+    def sample_values(self, rel_abund: pd.Series) -> dict[str, float]:
+        """Per-taxon value in the baseline's space. In CLR space the sample is
+        transformed over the baseline taxa plus any taxa it introduces, so the
+        geometric-mean reference matches how the baseline was built."""
+        if self.space != "clr":
+            return {t: float(v) for t, v in rel_abund.items()}
+        present = [t for t, v in rel_abund.items() if v > 0]
+        taxa = list(dict.fromkeys((self.taxa or []) + present))
+        x = np.array([max(float(rel_abund.get(t, 0.0)), 0.0) for t in taxa]) + self.pseudocount
+        logx = np.log(x)
+        clr = logx - logx.mean()
+        return dict(zip(taxa, clr))
+
+    def exceedance(self, taxon: str, value: float) -> float:
         if taxon in self.median:
             m, s = self.median[taxon], self.scale[taxon]
+        elif self.space == "clr":
+            # unseen taxon: baseline presence ≈ pseudocount → very low CLR; use
+            # the lowest baseline location and a typical scale as its reference.
+            m = min(self.median.values()) if self.median else 0.0
+            s = float(np.median(list(self.scale.values()))) if self.scale else self.novel_scale
         else:
             m, s = 0.0, self.novel_scale
-        return max(0.0, (float(abundance) - m) / s)
+        return max(0.0, (float(value) - m) / s)
 
     # ── persistence (freeze a clean-window baseline, reuse across runs) ──────
     def to_dict(self) -> dict:
-        return {"version": 1, "median": self.median, "scale": self.scale,
-                "scale_floor": self.scale_floor, "novel_scale": self.novel_scale}
+        return {"version": 2, "median": self.median, "scale": self.scale,
+                "scale_floor": self.scale_floor, "novel_scale": self.novel_scale,
+                "space": self.space, "taxa": self.taxa, "pseudocount": self.pseudocount}
 
     @classmethod
     def from_dict(cls, d: dict) -> "AbundanceBaseline":
         return cls(median=dict(d["median"]), scale=dict(d["scale"]),
                    scale_floor=d.get("scale_floor", 1e-3),
-                   novel_scale=d.get("novel_scale", 5e-3))
+                   novel_scale=d.get("novel_scale", 5e-3),
+                   space=d.get("space", "relative"), taxa=d.get("taxa"),
+                   pseudocount=d.get("pseudocount", 1e-6))
 
     def save(self, path) -> None:
         import json
@@ -117,19 +157,20 @@ class AbundanceBaseline:
 
     @classmethod
     def from_controls(cls, rel_abundance: pd.DataFrame, control_names: list[str],
-                      scale_floor: float = 1e-3) -> "AbundanceBaseline":
+                      scale_floor: float = 1e-3, space: str = "relative") -> "AbundanceBaseline":
         """Fit from a designated set of clean/negative-control sample columns
         (CZ ID-style background model) rather than the whole cohort."""
         cols = [c for c in control_names if c in rel_abundance.columns]
         if not cols:
             raise ValueError("none of the control_names are in the abundance matrix")
-        return cls.fit(rel_abundance[cols], scale_floor=scale_floor)
+        return cls.fit(rel_abundance[cols], scale_floor=scale_floor, space=space)
 
 
 def _elevation(rel_abund: pd.Series, baseline: AbundanceBaseline) -> tuple[float, list[dict]]:
     """Max danger-weighted exceedance over present pathogen genera."""
     best = 0.0
     detected: list[dict] = []
+    values = baseline.sample_values(rel_abund)   # raw or CLR, per baseline.space
     for taxon, ab in rel_abund.items():
         if ab <= 0:
             continue
@@ -137,7 +178,7 @@ def _elevation(rel_abund: pd.Series, baseline: AbundanceBaseline) -> tuple[float
         info = PATHOGEN_DB.get(genus)
         if info is None:
             continue
-        z = baseline.exceedance(taxon, ab)
+        z = baseline.exceedance(taxon, values.get(taxon, ab))
         rw = info["risk_weight"]
         contribution = _squash(z) * (0.5 + 0.5 * rw)   # danger-scaled anomaly
         detected.append({
@@ -208,17 +249,20 @@ def score_all_relative(
     novelty_scores: dict[str, float] | None = None,
     temporal_z: dict[str, float] | None = None,
     weights: dict | None = None,
+    space: str = "relative",
 ) -> list[RiskScore]:
     """Score all samples against a baseline. Baseline resolution order:
       1. an explicit `baseline` (a frozen clean historical window), else
       2. fit from `control_names` (CZ ID-style negative/clean controls), else
       3. a robust cohort self-baseline (cold start) — flags samples whose
          pathogen composition departs from the site's typical profile.
+    space: "relative" (raw) or "clr" (compositional) — used only when fitting a
+    baseline here (an explicit `baseline` carries its own space).
     """
     rel = sampleset.relative_abundance
     if baseline is None:
-        baseline = (AbundanceBaseline.from_controls(rel, control_names)
-                    if control_names else AbundanceBaseline.fit(rel))
+        baseline = (AbundanceBaseline.from_controls(rel, control_names, space=space)
+                    if control_names else AbundanceBaseline.fit(rel, space=space))
     novelty_scores = novelty_scores or {}
     temporal_z = temporal_z or {}
 

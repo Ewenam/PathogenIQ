@@ -94,3 +94,39 @@ def test_injected_spike_is_flagged_over_endemic_cohort():
     assert top.sample_name == "s0"
     assert top.breakdown["top_driver"]["genus"] == "Acinetobacter"
     assert top.score > scores[-1].score      # spike ranks above normal samples
+
+
+def test_clr_space_endemic_low_outbreak_ranks_top():
+    # CLR (compositional) baseline: endemic flora benign, novel outbreak ranks top
+    import pandas as pd
+    from pathogeniq.scoring.baseline_risk import AbundanceBaseline
+    rng = np.random.default_rng(3)
+    cols = {}
+    for i in range(15):
+        ps = max(0.01, rng.normal(0.40, 0.03)); rest = 1 - ps
+        cols[f"c{i}"] = pd.Series({"Pseudomonas": ps, "Vibrio": 0.0, "Bg1": rest})
+    cols["clean"] = pd.Series({"Pseudomonas": 0.41, "Vibrio": 0.0, "Bg1": 0.59})
+    cols["outbreak"] = pd.Series({"Pseudomonas": 0.30, "Vibrio": 0.35, "Bg1": 0.35})
+    mat = pd.concat(cols, axis=1); rel = mat.div(mat.sum(axis=0), axis=1)
+    ss = SampleSet(samples=[Sample(n) for n in rel.columns], taxa_matrix=mat,
+                   relative_abundance=rel)
+    scores = {r.sample_name: r for r in score_all_relative(ss, space="clr")}
+    assert scores["clean"].level == "LOW"
+    assert scores["outbreak"].score > scores["clean"].score
+    assert scores["outbreak"].breakdown["top_driver"]["genus"] == "Vibrio"
+
+
+def test_clr_baseline_save_load_roundtrip(tmp_path):
+    import pandas as pd
+    from pathogeniq.scoring.baseline_risk import AbundanceBaseline, score_sample_relative
+    rng = np.random.default_rng(4)
+    cols = {f"c{i}": pd.Series({"Pseudomonas": max(0.01, rng.normal(0.4, 0.03)),
+                                "Bg1": 0.5}) for i in range(12)}
+    rel = pd.concat(cols, axis=1)
+    bl = AbundanceBaseline.fit(rel, space="clr")
+    bl.save(tmp_path / "clr.json")
+    bl2 = AbundanceBaseline.load(tmp_path / "clr.json")
+    assert bl2.space == "clr"
+    s = pd.Series({"Vibrio": 0.3, "Pseudomonas": 0.3, "Bg1": 0.4})
+    assert abs(score_sample_relative("x", s, bl).score
+               - score_sample_relative("x", s, bl2).score) < 1e-9

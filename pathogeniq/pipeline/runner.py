@@ -614,6 +614,7 @@ def run(
     provenance_path = out_dir / "provenance.json"
 
     report_dict = to_dict(risk_scores, meta, baselines, cusum_results, trend_results,
+                          farrington_results,
                           graph_data, cluster_data, abundance_matrix, outbreak_data,
                           rarefaction_data)
     report_content_hash = provenance.compute_report_content_hash(report_dict["samples"])
