@@ -35,7 +35,11 @@ def _run_once(tmp_path, store, run_date, taxa_reads, tag, external_signals=None)
     _write_synthetic_reports(input_dir, ["siteA", "siteB"], taxa_reads)
 
     output_dir = tmp_path / f"output_{tag}"
-    cfg = PipelineConfig(output_dir=str(output_dir), alert_threshold=0.6, run_date=run_date)
+    # This suite validates the external-signal correlation feature, whose
+    # synthetic fixture builds the external signal from the score∝abundance
+    # behavior of the absolute scorer; pin that scorer here.
+    cfg = PipelineConfig(output_dir=str(output_dir), alert_threshold=0.6,
+                         run_date=run_date, scoring_mode="absolute")
     run(
         input_path=input_dir, config=cfg, rank="G", quiet=True, store=store,
         actor="test-actor", external_signals=external_signals,

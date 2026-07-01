@@ -44,6 +44,10 @@ class PipelineConfig:
     cusum_h: float = 4.0            # CUSUM alert threshold
     db_path: str = ""               # SQLite history DB path (default: ~/.pathogeniq/history.db)
     run_date: str = ""              # ISO date for this run (default: today)
+    # Scoring: "baseline_relative" (trustworthy default — anomaly vs site
+    # baseline; endemic flora does not saturate the score) or "absolute" (the
+    # legacy risk_weight×abundance scorer, kept for the synthetic benchmark/paper).
+    scoring_mode: str = "baseline_relative"
     # Reporting
     output_dir: str = "./reports"
     # Alerting
@@ -382,13 +386,28 @@ def run(
 
     # ── Step 6: Risk scoring ──────────────────────────────────────────────────
     console.rule("Step 6: Risk Scoring")
-    from ..scoring.risk import score_all_samples
-    risk_scores = score_all_samples(
-        sampleset,
-        sbm_result=sbm_result,
-        novelty_scores=novelty_scores,
-        alert_threshold=cfg.alert_threshold,
-    )
+    if cfg.scoring_mode == "baseline_relative":
+        # Trustworthy default: score each sample's pathogen elevation relative
+        # to a per-site baseline (cohort self-baseline when no history is
+        # supplied), so endemic flora (e.g. Pseudomonas ~39%) does not saturate
+        # every sample to HIGH. SBM community context is intentionally excluded
+        # (non-discriminative on real data).
+        from ..scoring.baseline_risk import score_all_relative
+        console.print("  mode: baseline-relative (anomaly vs site baseline)")
+        risk_scores = score_all_relative(
+            sampleset,
+            baseline=None,                # cohort self-baseline (cold start)
+            novelty_scores=novelty_scores,
+        )
+    else:
+        from ..scoring.risk import score_all_samples
+        console.print("  mode: absolute (legacy)")
+        risk_scores = score_all_samples(
+            sampleset,
+            sbm_result=sbm_result,
+            novelty_scores=novelty_scores,
+            alert_threshold=cfg.alert_threshold,
+        )
 
     alerts = [r for r in risk_scores if r.is_alert(cfg.alert_threshold)]
     for r in risk_scores:
